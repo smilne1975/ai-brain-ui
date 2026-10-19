@@ -1,0 +1,35 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.eggs/
+
+# Node and frontend build output
+node_modules/
+dist/
+dist-ssr/
+build/
+*.tsbuildinfo
+
+# Local caches and databases
+.brain/
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+
+# Secrets. Templates such as .env.example stay tracked.
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Logs and OS clutter
+*.log
+.DS_Store
+Thumbs.db

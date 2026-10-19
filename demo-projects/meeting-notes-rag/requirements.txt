@@ -1,0 +1,3 @@
+# not installed globally on purpose
+# chromadb
+# openai
