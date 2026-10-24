@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from backend.app.activity import build_cards, build_timeline, narrate_cards, narrate_timeline, window_days
 from backend.app.ask import answer
 from backend.app.engine import Engine, Hub
 from backend.app.llm import resolve_provider
@@ -75,6 +76,26 @@ def create_app() -> FastAPI:
     @app.get("/api/brain")
     def get_brain():
         return _require_brain(app.state.engine)
+
+    @app.get("/api/timeline")
+    def timeline(days: int = 7):
+        engine: Engine = app.state.engine
+        brain = _require_brain(engine)
+        payload = build_timeline(engine.root, brain, window_days(days))
+        provider = resolve_provider()
+        if provider:
+            payload = narrate_timeline(provider, payload)
+        return payload
+
+    @app.get("/api/cards")
+    def cards():
+        engine: Engine = app.state.engine
+        brain = _require_brain(engine)
+        payload = build_cards(engine.root, brain)
+        provider = resolve_provider()
+        if provider:
+            payload = narrate_cards(provider, payload)
+        return payload
 
     @app.post("/api/rescan")
     def rescan():

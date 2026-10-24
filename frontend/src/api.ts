@@ -1,4 +1,4 @@
-import type { AskResponse, Brain, BrainStatus } from "./types"
+import type { AskResponse, Brain, BrainStatus, CardBoard, Timeline } from "./types"
 
 export async function fetchStatus(): Promise<BrainStatus> {
   const res = await fetch("/api/health")
@@ -25,6 +25,28 @@ export async function rescan(): Promise<BrainStatus> {
   const res = await fetch("/api/rescan", { method: "POST" })
   if (!res.ok) throw new Error("Rescan failed.")
   return res.json() as Promise<BrainStatus>
+}
+
+export async function fetchTimeline(days: number): Promise<Timeline> {
+  const res = await fetch(`/api/timeline?days=${days}`)
+  if (!res.ok) throw new Error(await readDetail(res, "The timeline is not ready."))
+  return res.json() as Promise<Timeline>
+}
+
+export async function fetchCards(): Promise<CardBoard> {
+  const res = await fetch("/api/cards")
+  if (!res.ok) throw new Error(await readDetail(res, "Project cards are not ready."))
+  return res.json() as Promise<CardBoard>
+}
+
+async function readDetail(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await res.json()) as { detail?: string }
+    if (body.detail) return body.detail
+  } catch {
+    /* keep the fallback */
+  }
+  return fallback
 }
 
 export async function ask(question: string, projectId: string | null): Promise<AskResponse> {

@@ -100,14 +100,17 @@ def public_provider() -> dict:
     return {"mode": provider["name"], "model": provider["model"], "label": f"{provider['display']} · {provider['model']}"}
 
 
-def complete(provider: dict, system: str, user: str, max_tokens: int = 700) -> str:
+def complete(provider: dict, system: str, user: str, max_tokens: int = 700, timeout: int | None = None) -> str:
     system = redact(system)
     user = redact(user)
     if provider["style"] == "anthropic":
-        return _anthropic(provider, system, user, max_tokens)
+        limit = 45 if timeout is None else timeout
+        return _anthropic(provider, system, user, max_tokens, limit)
     if provider["style"] == "ollama":
-        return _ollama(provider, system, user)
-    return _openai(provider, system, user, max_tokens)
+        limit = 90 if timeout is None else timeout
+        return _ollama(provider, system, user, limit)
+    limit = 45 if timeout is None else timeout
+    return _openai(provider, system, user, max_tokens, limit)
 
 
 def summarize_projects(provider: dict, brain: dict) -> dict[str, str]:
@@ -183,7 +186,7 @@ def _post(url: str, payload: dict, headers: dict, timeout: int = 45) -> dict:
         raise RuntimeError(f"model HTTP {exc.code}") from None
 
 
-def _openai(provider: dict, system: str, user: str, max_tokens: int) -> str:
+def _openai(provider: dict, system: str, user: str, max_tokens: int, timeout: int) -> str:
     data = _post(
         f"{provider['base']}/chat/completions",
         {
@@ -199,11 +202,12 @@ def _openai(provider: dict, system: str, user: str, max_tokens: int) -> str:
             "Authorization": f"Bearer {provider['key']}",
             "Content-Type": "application/json",
         },
+        timeout=timeout,
     )
     return data["choices"][0]["message"]["content"]
 
 
-def _anthropic(provider: dict, system: str, user: str, max_tokens: int) -> str:
+def _anthropic(provider: dict, system: str, user: str, max_tokens: int, timeout: int) -> str:
     data = _post(
         f"{provider['base']}/v1/messages",
         {
@@ -217,12 +221,13 @@ def _anthropic(provider: dict, system: str, user: str, max_tokens: int) -> str:
             "anthropic-version": "2023-06-01",
             "Content-Type": "application/json",
         },
+        timeout=timeout,
     )
     parts = data.get("content") or []
     return "".join(part.get("text", "") for part in parts if isinstance(part, dict))
 
 
-def _ollama(provider: dict, system: str, user: str) -> str:
+def _ollama(provider: dict, system: str, user: str, timeout: int) -> str:
     data = _post(
         f"{provider['base']}/api/chat",
         {
@@ -234,6 +239,6 @@ def _ollama(provider: dict, system: str, user: str) -> str:
             ],
         },
         {"Content-Type": "application/json"},
-        timeout=90,
+        timeout=timeout,
     )
     return (data.get("message") or {}).get("content") or ""

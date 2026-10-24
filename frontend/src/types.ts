@@ -1,4 +1,76 @@
-export type View = "skills" | "blueprint" | "system" | "connections"
+export type View = "skills" | "blueprint" | "system" | "connections" | "timeline" | "cards"
+
+export type TimelineFile = {
+  rel: string
+  name: string
+  when: string
+  via: "mtime" | "git" | "both" | string
+  change: string
+  commit: string | null
+  note: string
+}
+
+export type TimelineCommit = { hash: string; subject: string; when: string }
+
+export type TimelineProject = {
+  project_id: string
+  name: string
+  summary: string
+  summary_source: string
+  files: TimelineFile[]
+  commits: TimelineCommit[]
+  more?: number
+}
+
+export type TimelineDay = { date: string; label: string; projects: TimelineProject[] }
+
+export type TimelineWeek = {
+  id: string
+  label: string
+  start: string
+  end: string
+  file_count: number
+  project_count: number
+  days: TimelineDay[]
+}
+
+export type Timeline = {
+  window_days: 1 | 7 | 30
+  label: string
+  generated_at: string
+  source: string
+  project_count: number
+  file_count: number
+  weeks: TimelineWeek[]
+}
+
+export type CardEntry = { path: string; how: string; kind: string }
+
+export type ProjectCard = {
+  project_id: string
+  name: string
+  blurb: string
+  blurb_source: string
+  activity: "active" | "stale" | "abandoned"
+  run: "runs" | "unknown"
+  entry: CardEntry | null
+  last_touched: string | null
+  files: number
+  languages: { name: string; count: number }[]
+  unfinished: {
+    todos: number
+    fixmes: number
+    stubs: string[]
+    empty: string[]
+    missing_requirements: string[]
+  }
+}
+
+export type CardBoard = {
+  generated_at: string
+  source: string
+  cards: ProjectCard[]
+}
 
 export type BrainStatus = {
   ok: boolean

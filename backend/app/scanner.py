@@ -89,7 +89,9 @@ EXCERPT = 900
 ProgressFn = Callable[[dict], None]
 
 _KEY_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
-_TODO_RE = re.compile(r"(?im)^\s*(?:#|//|<!--)?\s*(TODO|FIXME|HACK|XXX)\b[:\s-]*(.{0,140})")
+_TODO_RE = re.compile(
+    r"(?im)^\s*(?:[-*+]|\d+[.)])?\s*(?:#|//|<!--)?\s*(TODO|FIXME|HACK|XXX)\b[:\s-]*(.{0,140})"
+)
 _HEADING_RE = re.compile(r"^#{1,3}\s+(.+)$", re.M)
 
 
@@ -399,7 +401,7 @@ def _scan_file(project_id: str, project_root: Path, path: Path) -> dict | None:
     except OSError:
         return None
     if b"\x00" in raw[:1024]:
-        return _base_record(project_id, rel, path.name, "binary", 0, "Binary file, skipped.", "", [], None, [], False, [])
+        return _attach(path, _base_record(project_id, rel, path.name, "binary", 0, "Binary file, skipped.", "", [], None, [], False, []))
     text = raw.decode("utf-8", errors="replace")
     lines = text.count("\n") + (1 if text else 0)
     if env_class:
@@ -416,7 +418,7 @@ def _scan_file(project_id: str, project_root: Path, path: Path) -> dict | None:
             project_id, rel, path.name, "env", lines, summary, "", skills, env_class, keys, False, []
         )
         rec["service_how"] = _service_how_for_env(keys, env_class)
-        return rec
+        return _attach(path, rec)
     safe = redact(text)
     todos = _todos(safe)
     symbols: list[dict] = []
@@ -441,7 +443,7 @@ def _scan_file(project_id: str, project_root: Path, path: Path) -> dict | None:
     rec["intro"] = (intro or doc or "")[:400]
     rec["title"] = _title(path.name, kind, safe)
     rec["service_how"] = _service_how_for_text(rel, safe)
-    return rec
+    return _attach(path, rec, local_imports)
 
 
 def _base_record(
@@ -467,7 +469,25 @@ def _base_record(
         "title": name,
         "project_rel": "",
         "service_how": {},
+        "mtime": None,
+        "imports_top": [],
     }
+
+
+def _attach(path: Path, rec: dict, imports: list[str] | None = None) -> dict:
+    """Record mtime and top-level imports. Never stores raw env values."""
+    try:
+        rec["mtime"] = int(path.lstat().st_mtime)
+    except OSError:
+        rec["mtime"] = None
+    found: list[str] = []
+    for name in imports or []:
+        top = name.split(".")[0].strip()
+        if not top or top.startswith("_") or top in found:
+            continue
+        found.append(top)
+    rec["imports_top"] = found[:32]
+    return rec
 
 
 def _kind(path: Path, env_class: str | None) -> str:

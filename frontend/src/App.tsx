@@ -1,18 +1,22 @@
 import { useEffect, useMemo, useState } from "react"
-import { fetchBrain, fetchStatus, rescan } from "./api"
+import { fetchBrain, fetchCards, fetchStatus, fetchTimeline, rescan } from "./api"
 import { Drawer } from "./components/Drawer"
 import { formatWhen, matchesQuery, projectName } from "./format"
-import type { Brain, BrainStatus, Selection, View } from "./types"
+import type { Brain, BrainStatus, CardBoard, Selection, Timeline, View } from "./types"
 import { BlueprintView } from "./views/BlueprintView"
+import { CardsView } from "./views/CardsView"
 import { ConnectionsView } from "./views/ConnectionsView"
 import { SkillsView } from "./views/SkillsView"
 import { SystemView } from "./views/SystemView"
+import { TimelineView } from "./views/TimelineView"
 
 const VIEWS: { id: View; label: string; hint: string }[] = [
   { id: "skills", label: "Skills", hint: "1" },
   { id: "blueprint", label: "Blueprint", hint: "2" },
   { id: "system", label: "System", hint: "3" },
   { id: "connections", label: "Connections", hint: "4" },
+  { id: "timeline", label: "Timeline", hint: "5" },
+  { id: "cards", label: "Cards", hint: "6" },
 ]
 
 function readView(): View {
@@ -33,6 +37,13 @@ export default function App() {
   const [selection, setSelection] = useState<Selection | null>(null)
   const [scanning, setScanning] = useState(true)
   const [pollEpoch, setPollEpoch] = useState(0)
+  const [timelineDays, setTimelineDays] = useState<1 | 7 | 30>(7)
+  const [timeline, setTimeline] = useState<Timeline | null>(null)
+  const [timelineLoading, setTimelineLoading] = useState(false)
+  const [timelineError, setTimelineError] = useState("")
+  const [cards, setCards] = useState<CardBoard | null>(null)
+  const [cardsLoading, setCardsLoading] = useState(false)
+  const [cardsError, setCardsError] = useState("")
 
   useEffect(() => {
     if (!window.location.hash) history.replaceState(null, "", "#/skills")
@@ -132,16 +143,64 @@ export default function App() {
         setSelection(null)
       }
       if (typing) return
-      const index = ["1", "2", "3", "4"].indexOf(event.key)
+      const index = VIEWS.findIndex((item) => item.hint === event.key)
       if (index >= 0) go(VIEWS[index].id)
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [])
 
+  const refreshKey = brain ? `${brain.scanned_at}|${brain.summaries}|${brain.stats.files}|${brain.stats.projects}` : ""
+
+  useEffect(() => {
+    if (!refreshKey || view !== "timeline") return
+    let cancel = false
+    setTimelineLoading(true)
+    setTimelineError("")
+    fetchTimeline(timelineDays)
+      .then((data) => {
+        if (!cancel) setTimeline(data)
+      })
+      .catch((reason: unknown) => {
+        if (!cancel) setTimelineError(reason instanceof Error ? reason.message : "The timeline is not ready.")
+      })
+      .finally(() => {
+        if (!cancel) setTimelineLoading(false)
+      })
+    return () => {
+      cancel = true
+    }
+  }, [refreshKey, view, timelineDays])
+
+  useEffect(() => {
+    if (!refreshKey || view !== "cards") return
+    let cancel = false
+    setCardsLoading(true)
+    setCardsError("")
+    fetchCards()
+      .then((data) => {
+        if (!cancel) setCards(data)
+      })
+      .catch((reason: unknown) => {
+        if (!cancel) setCardsError(reason instanceof Error ? reason.message : "Project cards are not ready.")
+      })
+      .finally(() => {
+        if (!cancel) setCardsLoading(false)
+      })
+    return () => {
+      cancel = true
+    }
+  }, [refreshKey, view])
+
   function go(next: View) {
     if (window.location.hash !== `#/${next}`) window.location.hash = `#/${next}`
     setView(next)
+  }
+
+  function openOnMap(projectId: string) {
+    setFocus(projectId)
+    setSelection({ kind: "project", id: projectId })
+    go("blueprint")
   }
 
   async function runRescan() {
@@ -343,6 +402,30 @@ export default function App() {
           {view === "connections" && (
             <ConnectionsView brain={brain} query={query} focus={focus} selection={selection} onSelect={setSelection} />
           )}
+          {view === "timeline" && (
+            <TimelineView
+              brain={brain}
+              data={timeline}
+              loading={timelineLoading}
+              error={timelineError}
+              days={timelineDays}
+              query={query}
+              focus={focus}
+              onDays={setTimelineDays}
+              onOpenProject={openOnMap}
+            />
+          )}
+          {view === "cards" && (
+            <CardsView
+              brain={brain}
+              data={cards}
+              loading={cardsLoading}
+              error={cardsError}
+              query={query}
+              focus={focus}
+              onOpenProject={openOnMap}
+            />
+          )}
         </div>
       </div>
       <Drawer
@@ -463,7 +546,23 @@ function Icon({ name }: { name: View }) {
       </svg>
     )
   }
+  if (name === "timeline") {
     return (
+      <svg viewBox="0 0 24 24" aria-hidden>
+        <circle cx="12" cy="12" r="7" />
+        <path d="M12 8v5l3 2" />
+      </svg>
+    )
+  }
+  if (name === "cards") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden>
+        <rect x="4" y="6" width="8" height="12" rx="1.2" />
+        <rect x="12" y="6" width="8" height="12" rx="1.2" />
+      </svg>
+    )
+  }
+  return (
     <svg viewBox="0 0 24 24" aria-hidden>
       <rect x="3" y="4" width="8" height="6" rx="1" />
       <rect x="13" y="4" width="8" height="6" rx="1" />

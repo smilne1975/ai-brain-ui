@@ -212,6 +212,8 @@ def test_startup_returns_before_the_scan_finishes(tmp_path: Path, monkeypatch):
             assert "alpha" in (early.get("message") or "") or "notes.md" in (early.get("current") or "")
             missing = client.get("/api/brain")
             assert missing.status_code == 503
+            assert client.get("/api/timeline").status_code == 503
+            assert client.get("/api/cards").status_code == 503
         finally:
             gate.set()
         ready = _wait_ready(client)
