@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from pydantic import BaseModel, Field
 
 from backend.app.activity import build_cards, build_timeline, narrate_cards, narrate_timeline, window_days
+from backend.app.copilot_chats import load_chats, merge_chats
 from backend.app.ask import answer
 from backend.app.engine import Engine, Hub
 from backend.app.llm import resolve_provider
@@ -85,7 +86,13 @@ def create_app() -> FastAPI:
         provider = resolve_provider()
         if provider:
             payload = narrate_timeline(provider, payload)
-        return payload
+        return merge_chats(payload, load_chats(engine.root, brain))
+
+    @app.get("/api/chats")
+    def chats():
+        engine: Engine = app.state.engine
+        brain = _require_brain(engine)
+        return load_chats(engine.root, brain)
 
     @app.get("/api/cards")
     def cards():

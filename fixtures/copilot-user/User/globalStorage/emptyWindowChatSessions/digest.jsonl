@@ -1,0 +1,1 @@
+{"kind": 0, "v": {"version": 3, "sessionId": "digest-dry-run", "creationDate": 1792902261403, "customTitle": "Dry-run the digest", "requests": [{"message": {"text": "Walk digest.py --dry-run and mention the steps already in HOWTO.md. Do not call GitHub."}, "timestamp": 1792902261403}]}}

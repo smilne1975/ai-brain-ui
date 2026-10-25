@@ -201,7 +201,9 @@ button:disabled { cursor: wait; opacity: 0.6; }
   color: var(--muted); font-size: 13px;
 }
 .focusbar b { color: white; font-weight: 600; }
+.focusbar > span { flex: 1 1 240px; min-width: 0; }
 .focusbar button { padding: 4px 10px; }
+.focus-why { display: block; margin-top: 4px; color: #d7ffe8; font-style: normal; }
 
 .stage { min-height: 0; position: relative; }
 .view { height: 100%; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
@@ -448,6 +450,38 @@ pre {
 .tl-files code { font-family: var(--mono); font-size: 12px; color: var(--green); }
 .tl-files span { color: var(--muted); font-size: 12.5px; }
 .tl-files i { font-style: normal; font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #6f8578; }
+.tl-chats { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.tl-chats li {
+  display: grid; gap: 3px;
+  border-top: 1px solid rgba(61, 255, 154, 0.16);
+  padding-top: 8px;
+}
+.tl-chats i { font-style: normal; font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--green); }
+.tl-chats strong { font-weight: 560; color: #e7f6ee; }
+.tl-chats span, .tl-chats em { color: var(--muted); font-size: 12.5px; font-style: normal; }
+.why { display: grid; gap: 8px; }
+.why > span, .chat-meta {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--green);
+}
+.chat-session {
+  display: grid; gap: 4px;
+  border: 1px solid rgba(61, 255, 154, 0.18);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #07110c;
+}
+.chat-when { display: flex; justify-content: space-between; gap: 8px; margin: 0; color: var(--muted); font-family: var(--mono); font-size: 11px; }
+.chat-when em { font-style: normal; color: #d7ffe8; text-align: right; }
+.chat-prompt { margin: 0; color: #e7f6ee; line-height: 1.4; }
+.chat-summary { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
+.chat-files { display: flex; flex-wrap: wrap; gap: 6px; }
+.chat-files button, .chat-files code {
+  font-family: var(--mono); font-size: 11px; color: var(--green);
+  background: transparent; border: 1px solid rgba(61, 255, 154, 0.35);
+  border-radius: 999px; padding: 2px 8px;
+}
+.chat-files button:hover { background: rgba(61, 255, 154, 0.12); }
+.chat-meta { color: #6f8578; }
 
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
 .status-card {

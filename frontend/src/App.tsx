@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
-import { fetchBrain, fetchCards, fetchStatus, fetchTimeline, rescan } from "./api"
+import { fetchBrain, fetchCards, fetchChats, fetchStatus, fetchTimeline, rescan } from "./api"
 import { Drawer } from "./components/Drawer"
 import { formatWhen, matchesQuery, projectName } from "./format"
-import type { Brain, BrainStatus, CardBoard, Selection, Timeline, View } from "./types"
+import type { Brain, BrainStatus, CardBoard, ChatIndex, Selection, Timeline, View } from "./types"
 import { BlueprintView } from "./views/BlueprintView"
 import { CardsView } from "./views/CardsView"
 import { ConnectionsView } from "./views/ConnectionsView"
@@ -44,6 +44,7 @@ export default function App() {
   const [cards, setCards] = useState<CardBoard | null>(null)
   const [cardsLoading, setCardsLoading] = useState(false)
   const [cardsError, setCardsError] = useState("")
+  const [chats, setChats] = useState<ChatIndex | null>(null)
 
   useEffect(() => {
     if (!window.location.hash) history.replaceState(null, "", "#/skills")
@@ -153,6 +154,21 @@ export default function App() {
   const refreshKey = brain ? `${brain.scanned_at}|${brain.summaries}|${brain.stats.files}|${brain.stats.projects}` : ""
 
   useEffect(() => {
+    if (!refreshKey) return
+    let cancel = false
+    fetchChats()
+      .then((data) => {
+        if (!cancel) setChats(data)
+      })
+      .catch(() => {
+        if (!cancel) setChats(null)
+      })
+    return () => {
+      cancel = true
+    }
+  }, [refreshKey])
+
+  useEffect(() => {
     if (!refreshKey || view !== "timeline") return
     let cancel = false
     setTimelineLoading(true)
@@ -217,6 +233,7 @@ export default function App() {
 
   const hits = useMemo(() => (brain ? searchHits(brain, query) : []), [brain, query])
   const focused = brain?.projects.find((project) => project.id === focus) ?? null
+  const focusedChat = focused ? chats?.sessions.find((session) => session.project_id === focused.id && session.summary) : undefined
   const rootPath = brain?.root || status?.root || ""
   const rootName = brain?.root_name || status?.root_name || folderName(rootPath)
 
@@ -380,6 +397,7 @@ export default function App() {
           <div className="focusbar">
             <span>
               Focused on <b>{focused.name}</b> · {focused.stats.files} files · {focused.stats.lines} lines
+              {focusedChat ? <em className="focus-why">Why · {focusedChat.summary}</em> : null}
             </span>
             <button type="button" onClick={() => go("blueprint")}>
               Blueprint
@@ -419,17 +437,20 @@ export default function App() {
             <CardsView
               brain={brain}
               data={cards}
+              chats={chats}
               loading={cardsLoading}
               error={cardsError}
               query={query}
               focus={focus}
               onOpenProject={openOnMap}
+              onOpenFile={(id) => setSelection({ kind: "file", id })}
             />
           )}
         </div>
       </div>
       <Drawer
         brain={brain}
+        chats={chats}
         selection={selection}
         onClose={() => setSelection(null)}
         onOpenFile={(id) => setSelection({ kind: "file", id })}

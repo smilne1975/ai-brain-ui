@@ -1,5 +1,6 @@
 import { useState } from "react"
-import type { Brain, CardBoard, ProjectCard } from "../types"
+import { ChatHistory, sessionsFor } from "../components/ChatHistory"
+import type { Brain, CardBoard, ChatIndex, ProjectCard } from "../types"
 import { formatWhen, matchesQuery, projectName } from "../format"
 
 type Filter = "all" | "active" | "stale" | "abandoned"
@@ -7,11 +8,13 @@ type Filter = "all" | "active" | "stale" | "abandoned"
 type Props = {
   brain: Brain
   data: CardBoard | null
+  chats: ChatIndex | null
   loading: boolean
   error: string
   query: string
   focus: string | null
   onOpenProject: (id: string) => void
+  onOpenFile: (id: string) => void
 }
 
 const FILTERS: { id: Filter; label: string }[] = [
@@ -21,7 +24,7 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: "abandoned", label: "Abandoned" },
 ]
 
-export function CardsView({ brain, data, loading, error, query, focus, onOpenProject }: Props) {
+export function CardsView({ brain, data, chats, loading, error, query, focus, onOpenProject, onOpenFile }: Props) {
   const [filter, setFilter] = useState<Filter>("all")
   const cards = (data?.cards ?? []).filter((card) => {
     if (focus && card.project_id !== focus) return false
@@ -32,7 +35,10 @@ export function CardsView({ brain, data, loading, error, query, focus, onOpenPro
       ...card.unfinished.empty,
       ...card.unfinished.missing_requirements,
     ].join(" ")
-    return matchesQuery(query, `${card.name} ${card.blurb} ${card.entry?.how ?? ""} ${langs} ${unfinished}`)
+    const chatText = sessionsFor(chats?.sessions, card.project_id)
+      .map((session) => `${session.title} ${session.prompt} ${session.summary}`)
+      .join(" ")
+    return matchesQuery(query, `${card.name} ${card.blurb} ${card.entry?.how ?? ""} ${langs} ${unfinished} ${chatText}`)
   })
 
   return (
@@ -56,7 +62,8 @@ export function CardsView({ brain, data, loading, error, query, focus, onOpenPro
         ))}
       </div>
       <p className="quiet tl-note">
-        Active is the last 7 days, stale is 30, and older than that is abandoned. Runs means a way to start it was found. .env values are never read.
+        Active is the last 7 days, stale is 30, and older than that is abandoned. Runs means a way to start it was found. Copilot chat stays on this machine.
+        {chats && !chats.enabled ? " Chat history is off (BRAIN_COPILOT_CHATS=0)." : ""} .env values are never read.
       </p>
       {error && <p className="ask-error">{error}</p>}
       {loading && !data && <p className="empty-copy">Reading project cards…</p>}
@@ -75,6 +82,11 @@ export function CardsView({ brain, data, loading, error, query, focus, onOpenPro
               </div>
             </div>
             <p className="status-blurb">{card.blurb}</p>
+            <ChatHistory
+              enabled={Boolean(chats?.enabled)}
+              sessions={sessionsFor(chats?.sessions, card.project_id)}
+              onOpenFile={onOpenFile}
+            />
             <div className="status-run">
               <span>Run</span>
               {card.entry ? <code>{card.entry.how}</code> : <em>No entry point found</em>}

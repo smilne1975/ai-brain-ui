@@ -12,6 +12,44 @@ export type TimelineFile = {
 
 export type TimelineCommit = { hash: string; subject: string; when: string }
 
+export type ChatFileRef = { rel: string; name: string; file_id: string | null }
+
+export type ChatPrompt = { text: string; when: string | null; files: ChatFileRef[] }
+
+export type ChatSession = {
+  id: string
+  project_id: string | null
+  project_name: string | null
+  workspace_path: string
+  title: string
+  when: string | null
+  source: string
+  prompt: string
+  summary: string
+  summary_source: string
+  prompts: ChatPrompt[]
+  files: ChatFileRef[]
+}
+
+export type ChatIndex = {
+  enabled: boolean
+  source: string
+  roots: string[]
+  sessions: ChatSession[]
+  by_project: Record<string, string[]>
+  truncated: boolean
+  llm: boolean
+}
+
+export type TimelineChat = {
+  id: string
+  title: string
+  when: string | null
+  prompt: string
+  summary: string
+  files: ChatFileRef[]
+}
+
 export type TimelineProject = {
   project_id: string
   name: string
@@ -19,6 +57,7 @@ export type TimelineProject = {
   summary_source: string
   files: TimelineFile[]
   commits: TimelineCommit[]
+  chats?: TimelineChat[]
   more?: number
 }
 

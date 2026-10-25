@@ -1,8 +1,10 @@
-import type { Brain, Selection } from "../types"
+import { ChatHistory, sessionsFor } from "./ChatHistory"
+import type { Brain, ChatIndex, Selection } from "../types"
 import { connectionById, fileById, projectName, skillById, statusLabel } from "../format"
 
 type Props = {
   brain: Brain
+  chats: ChatIndex | null
   selection: Selection | null
   onClose: () => void
   onOpenFile: (id: string) => void
@@ -10,14 +12,16 @@ type Props = {
   onViewBlueprint: () => void
 }
 
-export function Drawer({ brain, selection, onClose, onOpenFile, onFocus, onViewBlueprint }: Props) {
+export function Drawer({ brain, chats, selection, onClose, onOpenFile, onFocus, onViewBlueprint }: Props) {
   if (!selection) return null
   return (
     <aside className="drawer" role="dialog" aria-label="Detail">
       <button type="button" className="drawer-close" onClick={onClose} aria-label="Close detail">
         Close
       </button>
-      {selection.kind === "project" && <ProjectBody brain={brain} id={selection.id} onFocus={onFocus} onViewBlueprint={onViewBlueprint} onOpenFile={onOpenFile} />}
+      {selection.kind === "project" && (
+        <ProjectBody brain={brain} chats={chats} id={selection.id} onFocus={onFocus} onViewBlueprint={onViewBlueprint} onOpenFile={onOpenFile} />
+      )}
       {selection.kind === "file" && <FileBody brain={brain} id={selection.id} onFocus={onFocus} />}
       {selection.kind === "skill" && <SkillBody brain={brain} id={selection.id} onOpenFile={onOpenFile} onFocus={onFocus} />}
       {selection.kind === "connection" && <ConnectionBody brain={brain} id={selection.id} onOpenFile={onOpenFile} onFocus={onFocus} />}
@@ -27,12 +31,14 @@ export function Drawer({ brain, selection, onClose, onOpenFile, onFocus, onViewB
 
 function ProjectBody({
   brain,
+  chats,
   id,
   onFocus,
   onViewBlueprint,
   onOpenFile,
 }: {
   brain: Brain
+  chats: ChatIndex | null
   id: string
   onFocus: (id: string | null) => void
   onViewBlueprint: () => void
@@ -52,6 +58,8 @@ function ProjectBody({
         <Stat n={project.stats.lines} label="lines" />
         <Stat n={project.stats.todos} label="todos" />
       </div>
+      <ChatHistory enabled={Boolean(chats?.enabled)} sessions={sessionsFor(chats?.sessions, id)} onOpenFile={onOpenFile} />
+      {!chats?.enabled && <p className="quiet">Copilot chat history is off. Set BRAIN_COPILOT_CHATS=1 to read local logs.</p>}
       <div className="drawer-actions">
         <button
           type="button"

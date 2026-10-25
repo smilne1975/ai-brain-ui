@@ -98,6 +98,54 @@ Open **Cards** (or press `6`). One card per folder:
 
 `GET /api/cards` returns the grid. Heuristics work with no API key. A configured provider can replace the blurb; it does not read `.env` values.
 
+## Copilot chat history
+
+Each project card, and the folder detail on the Blueprint map, has a **Why / Chat history** section. The Timeline lists the same sessions on the day they happened. Prompts that name a scanned file link to that file.
+
+`GET /api/chats` returns the sessions. The reader looks only at GitHub Copilot Chat logs already on disk:
+
+- Windows: `%APPDATA%\Code\User\workspaceStorage\<hash>\` and the same tree for `Code - Insiders` and VSCodium. A hash is matched to a project through `workspace.json` (the `folder` URI, or a `.code-workspace` file).
+- Inside each hash: `chatSessions/*.json` and `*.jsonl`, `state.vscdb` keys such as `interactive.sessions` and `memento/interactive-session`, `chatEditingSessions/*/state.json`, and `GitHub.copilot-chat/transcripts`.
+- `globalStorage/emptyWindowChatSessions`, transferred sessions, and profile folders are included.
+- macOS uses `~/Library/Application Support/Code/User`. Linux uses `~/.config/Code/User` and, when present, `~/.vscode-server/data/User`.
+
+Unreadable or half-written files are skipped. Nothing is uploaded. Chat text is redacted with the same rules as the rest of the index. A model receives chat text only when an API key is already configured **and** `BRAIN_COPILOT_LLM=1`. Otherwise the one-line summary is computed locally from the first prompt and the file names it mentions.
+
+Turn the feature off with `BRAIN_COPILOT_CHATS=0`. Point at one User directory, instead of the usual locations, with `BRAIN_COPILOT_CHATS_ROOT`. Sample logs live in `fixtures/copilot-user/` and are included when the scan folder is named `demo-projects`, so the demo shows them. Set `BRAIN_COPILOT_INCLUDE_SAMPLES=0` to hide those samples, or `=1` to include them on a real projects folder.
+
+```bat
+set BRAIN_COPILOT_CHATS=0
+start.bat
+```
+
+```bat
+set BRAIN_COPILOT_CHATS_ROOT=%APPDATA%\Code\User
+set BRAIN_COPILOT_LLM=1
+start.bat -Projects "D:\notes\ai-projects"
+```
+
+## VS Code panel
+
+`vscode-extension/` is a small extension that opens this dashboard as a webview. A built package is committed at `releases/ai-brain-0.1.0.vsix`.
+
+1. In VS Code, open Extensions.
+2. Open the `...` menu and choose **Extensions: Install from VSIX...**.
+3. Select `releases/ai-brain-0.1.0.vsix`.
+4. Use the activity-bar **AI Brain** icon, or run **AI Brain: Open Dashboard** from the command palette.
+
+The panel loads `http://127.0.0.1:8741/`. The port is the `aiBrain.port` setting. If that server is not running, the extension asks, then starts it with `python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8741`. It does not run PowerShell. On Windows it tries `py`, then `python`, then `python3`.
+
+The projects folder is the workspace you have open, or `aiBrain.projectsFolder` when that is set. The Python checkout is discovered by walking the workspace for `backend/app/main.py`. The VSIX does not contain the backend, so set `aiBrain.repoPath` when the open folder is not this repo. `aiBrain.pythonPath` overrides the Python executable.
+
+Rebuild the package from the repo:
+
+```bash
+cd vscode-extension
+npm install
+npm run compile
+npx vsce package --allow-missing-repository -o ../releases/ai-brain-0.1.0.vsix
+```
+
 ## How a scan becomes the views
 
 The scanner walks each project, reads text files, and builds:
@@ -128,3 +176,5 @@ BRAIN_ROOT=./demo-projects .venv/bin/python -m uvicorn backend.app.main:app --ho
 ## Demo folder
 
 `demo-projects/` is a fake week of VS Code work: an inbox labeler, a meeting-note search, a pull-request digest, a prompt vault, a local photo sorter, and a tiny agent loop. The `.env` files contain obvious placeholder values so the connections view can show “connected” without a real credential. Those placeholders are the only `.env` files tracked in git. Timeline and Cards use the same scan: the inbox and the agent have run commands, the photo sorter is missing Pillow, the notes search imports Chroma without listing it, and the prompt vault has no entry point.
+
+`fixtures/copilot-user/` is a fake VS Code user directory (chat session logs, a transcript, a `state.vscdb`, and an edit session) so those cards show Why / Chat history without a real Copilot profile. One sample line contains a fake `sk-` token; the API redacts it.

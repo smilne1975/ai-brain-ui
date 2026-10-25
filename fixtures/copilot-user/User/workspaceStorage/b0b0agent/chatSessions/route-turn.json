@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "sessionId": "agent-route-turn",
+  "creationDate": 1792650261403,
+  "customTitle": "Why route_turn runs first",
+  "requests": [
+    {
+      "message": {
+        "text": "Why does agent.py call route_turn before tools/search_notes.py? I want the scratch loop to stay local."
+      },
+      "timestamp": 1792650261403
+    }
+  ]
+}

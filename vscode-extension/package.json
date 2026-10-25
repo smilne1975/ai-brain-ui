@@ -1,0 +1,84 @@
+{
+  "name": "ai-brain",
+  "displayName": "AI Brain",
+  "description": "Open the local AI Brain dashboard inside VS Code.",
+  "version": "0.1.0",
+  "publisher": "smilne1975",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smilne1975/ai-brain-ui"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onCommand:aiBrain.openDashboard",
+    "onView:aiBrain.dashboard"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "aiBrain.openDashboard",
+        "title": "Open Dashboard",
+        "category": "AI Brain",
+        "icon": "$(pulse)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aiBrain",
+          "title": "AI Brain",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "aiBrain": [
+        {
+          "type": "webview",
+          "id": "aiBrain.dashboard",
+          "name": "Dashboard"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "AI Brain",
+      "properties": {
+        "aiBrain.port": {
+          "type": "number",
+          "default": 8741,
+          "description": "Port for the local AI Brain server on 127.0.0.1."
+        },
+        "aiBrain.projectsFolder": {
+          "type": "string",
+          "default": "",
+          "description": "Folder to scan. Leave empty to use the open workspace folder."
+        },
+        "aiBrain.pythonPath": {
+          "type": "string",
+          "default": "",
+          "description": "Python used to start the backend. Empty tries python3, python, and py."
+        },
+        "aiBrain.repoPath": {
+          "type": "string",
+          "default": "",
+          "description": "Checkout of ai-brain-ui that contains backend/app/main.py."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "package": "vsce package --allow-missing-repository -o ../releases/ai-brain-0.1.0.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.6.0",
+    "typescript": "~5.9.3"
+  }
+}

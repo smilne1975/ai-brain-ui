@@ -1,4 +1,4 @@
-import type { AskResponse, Brain, BrainStatus, CardBoard, Timeline } from "./types"
+import type { AskResponse, Brain, BrainStatus, CardBoard, ChatIndex, Timeline } from "./types"
 
 export async function fetchStatus(): Promise<BrainStatus> {
   const res = await fetch("/api/health")
@@ -31,6 +31,12 @@ export async function fetchTimeline(days: number): Promise<Timeline> {
   const res = await fetch(`/api/timeline?days=${days}`)
   if (!res.ok) throw new Error(await readDetail(res, "The timeline is not ready."))
   return res.json() as Promise<Timeline>
+}
+
+export async function fetchChats(): Promise<ChatIndex> {
+  const res = await fetch("/api/chats")
+  if (!res.ok) throw new Error(await readDetail(res, "Copilot chats are not ready."))
+  return res.json() as Promise<ChatIndex>
 }
 
 export async function fetchCards(): Promise<CardBoard> {

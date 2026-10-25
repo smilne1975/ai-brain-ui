@@ -31,7 +31,8 @@ export function TimelineView({ brain, data, loading, error, days, query, focus, 
           projects: day.projects.filter((project) => {
             if (focus && project.project_id !== focus) return false
             const fileText = project.files.map((file) => `${file.rel} ${file.note}`).join(" ")
-            return matchesQuery(query, `${project.name} ${project.summary} ${fileText}`)
+            const chatText = (project.chats ?? []).map((chat) => `${chat.prompt} ${chat.summary}`).join(" ")
+            return matchesQuery(query, `${project.name} ${project.summary} ${fileText} ${chatText}`)
           }),
         }))
         .filter((day) => day.projects.length > 0),
@@ -40,6 +41,10 @@ export function TimelineView({ brain, data, loading, error, days, query, focus, 
 
   const fileCount = weeks.reduce(
     (sum, week) => sum + week.days.reduce((inner, day) => inner + day.projects.reduce((n, project) => n + project.files.length, 0), 0),
+    0,
+  )
+  const chatCount = weeks.reduce(
+    (sum, week) => sum + week.days.reduce((inner, day) => inner + day.projects.reduce((n, project) => n + (project.chats?.length ?? 0), 0), 0),
     0,
   )
   const folderCount = new Set(weeks.flatMap((week) => week.days.flatMap((day) => day.projects.map((project) => project.project_id)))).size
@@ -52,7 +57,7 @@ export function TimelineView({ brain, data, loading, error, days, query, focus, 
           <h1>what was I doing?</h1>
         </div>
         <p className="conn-count">
-          {data ? `${fileCount} files · ${folderCount} folders` : loading ? "Reading recent files" : "No timeline yet"}
+          {data ? `${fileCount} files · ${chatCount} chats · ${folderCount} folders` : loading ? "Reading recent files" : "No timeline yet"}
           {focus ? ` · ${projectName(brain, focus)}` : ""}
           {data?.source === "model" ? " · model" : ""}
         </p>
@@ -64,7 +69,7 @@ export function TimelineView({ brain, data, loading, error, days, query, focus, 
           </button>
         ))}
       </div>
-      <p className="quiet tl-note">File dates come from save times. A folder that is its own git repo also shows commit subjects. Values in .env files are never read.</p>
+      <p className="quiet tl-note">File dates come from save times. Copilot chats from this machine are listed on the same day. A folder that is its own git repo also shows commit subjects. Values in .env files are never read.</p>
       {error && <p className="ask-error">{error}</p>}
       {loading && !data && <p className="empty-copy">Reading recent files…</p>}
       {!loading && !error && weeks.length === 0 && (
@@ -101,6 +106,18 @@ export function TimelineView({ brain, data, loading, error, days, query, focus, 
                         </li>
                       ))}
                     </ul>
+                    {project.chats && project.chats.length > 0 && (
+                      <ul className="tl-chats">
+                        {project.chats.map((chat) => (
+                          <li key={chat.id}>
+                            <i>chat</i>
+                            <strong>{chat.prompt || chat.title}</strong>
+                            <span>{chat.summary}</span>
+                            {chat.files.length > 0 && <em>{chat.files.map((file) => file.rel).join(" · ")}</em>}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                     {project.more ? <p className="quiet">+{project.more} more files</p> : null}
                   </article>
                 ))}
