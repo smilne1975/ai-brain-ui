@@ -1,10 +1,13 @@
+import { saveHandoff } from "../api"
+import { BriefBlock, briefFor } from "./BriefBlock"
 import { ChatHistory, sessionsFor } from "./ChatHistory"
-import type { Brain, ChatIndex, Selection } from "../types"
+import type { Brain, BriefBoard, ChatIndex, Selection } from "../types"
 import { connectionById, fileById, projectName, skillById, statusLabel } from "../format"
 
 type Props = {
   brain: Brain
   chats: ChatIndex | null
+  briefs: BriefBoard | null
   selection: Selection | null
   onClose: () => void
   onOpenFile: (id: string) => void
@@ -12,7 +15,7 @@ type Props = {
   onViewBlueprint: () => void
 }
 
-export function Drawer({ brain, chats, selection, onClose, onOpenFile, onFocus, onViewBlueprint }: Props) {
+export function Drawer({ brain, chats, briefs, selection, onClose, onOpenFile, onFocus, onViewBlueprint }: Props) {
   if (!selection) return null
   return (
     <aside className="drawer" role="dialog" aria-label="Detail">
@@ -20,7 +23,15 @@ export function Drawer({ brain, chats, selection, onClose, onOpenFile, onFocus, 
         Close
       </button>
       {selection.kind === "project" && (
-        <ProjectBody brain={brain} chats={chats} id={selection.id} onFocus={onFocus} onViewBlueprint={onViewBlueprint} onOpenFile={onOpenFile} />
+        <ProjectBody
+          brain={brain}
+          chats={chats}
+          briefs={briefs}
+          id={selection.id}
+          onFocus={onFocus}
+          onViewBlueprint={onViewBlueprint}
+          onOpenFile={onOpenFile}
+        />
       )}
       {selection.kind === "file" && <FileBody brain={brain} id={selection.id} onFocus={onFocus} />}
       {selection.kind === "skill" && <SkillBody brain={brain} id={selection.id} onOpenFile={onOpenFile} onFocus={onFocus} />}
@@ -32,6 +43,7 @@ export function Drawer({ brain, chats, selection, onClose, onOpenFile, onFocus, 
 function ProjectBody({
   brain,
   chats,
+  briefs,
   id,
   onFocus,
   onViewBlueprint,
@@ -39,6 +51,7 @@ function ProjectBody({
 }: {
   brain: Brain
   chats: ChatIndex | null
+  briefs: BriefBoard | null
   id: string
   onFocus: (id: string | null) => void
   onViewBlueprint: () => void
@@ -58,6 +71,15 @@ function ProjectBody({
         <Stat n={project.stats.lines} label="lines" />
         <Stat n={project.stats.todos} label="todos" />
       </div>
+      {briefFor(briefs?.briefs, id) && (
+        <BriefBlock
+          brief={briefFor(briefs?.briefs, id)!}
+          onOpenFile={onOpenFile}
+          onSave={async () => {
+            await saveHandoff(id)
+          }}
+        />
+      )}
       <ChatHistory enabled={Boolean(chats?.enabled)} sessions={sessionsFor(chats?.sessions, id)} onOpenFile={onOpenFile} />
       {!chats?.enabled && <p className="quiet">Copilot chat history is off. Set BRAIN_COPILOT_CHATS=1 to read local logs.</p>}
       <div className="drawer-actions">

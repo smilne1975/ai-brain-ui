@@ -1,6 +1,7 @@
 import { useState } from "react"
+import { BriefBlock, briefFor } from "../components/BriefBlock"
 import { ChatHistory, sessionsFor } from "../components/ChatHistory"
-import type { Brain, CardBoard, ChatIndex, ProjectCard } from "../types"
+import type { Brain, BriefBoard, CardBoard, ChatIndex, ProjectCard } from "../types"
 import { formatWhen, matchesQuery, projectName } from "../format"
 
 type Filter = "all" | "active" | "stale" | "abandoned"
@@ -9,6 +10,7 @@ type Props = {
   brain: Brain
   data: CardBoard | null
   chats: ChatIndex | null
+  briefs: BriefBoard | null
   loading: boolean
   error: string
   query: string
@@ -24,7 +26,7 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: "abandoned", label: "Abandoned" },
 ]
 
-export function CardsView({ brain, data, chats, loading, error, query, focus, onOpenProject, onOpenFile }: Props) {
+export function CardsView({ brain, data, chats, briefs, loading, error, query, focus, onOpenProject, onOpenFile }: Props) {
   const [filter, setFilter] = useState<Filter>("all")
   const cards = (data?.cards ?? []).filter((card) => {
     if (focus && card.project_id !== focus) return false
@@ -38,7 +40,9 @@ export function CardsView({ brain, data, chats, loading, error, query, focus, on
     const chatText = sessionsFor(chats?.sessions, card.project_id)
       .map((session) => `${session.title} ${session.prompt} ${session.summary}`)
       .join(" ")
-    return matchesQuery(query, `${card.name} ${card.blurb} ${card.entry?.how ?? ""} ${langs} ${unfinished} ${chatText}`)
+    const brief = briefFor(briefs?.briefs, card.project_id)
+    const briefText = brief ? `${brief.last_doing} ${brief.next_step} ${brief.decisions.join(" ")}` : ""
+    return matchesQuery(query, `${card.name} ${card.blurb} ${card.entry?.how ?? ""} ${langs} ${unfinished} ${chatText} ${briefText}`)
   })
 
   return (
@@ -82,6 +86,9 @@ export function CardsView({ brain, data, chats, loading, error, query, focus, on
               </div>
             </div>
             <p className="status-blurb">{card.blurb}</p>
+            {briefFor(briefs?.briefs, card.project_id) && (
+              <BriefBlock brief={briefFor(briefs?.briefs, card.project_id)!} compact onOpenFile={onOpenFile} />
+            )}
             <ChatHistory
               enabled={Boolean(chats?.enabled)}
               sessions={sessionsFor(chats?.sessions, card.project_id)}

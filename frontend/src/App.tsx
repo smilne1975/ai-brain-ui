@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react"
-import { fetchBrain, fetchCards, fetchChats, fetchStatus, fetchTimeline, rescan } from "./api"
+import { fetchBrain, fetchBriefs, fetchCards, fetchChats, fetchStatus, fetchTimeline, rescan } from "./api"
 import { Drawer } from "./components/Drawer"
 import { formatWhen, matchesQuery, projectName } from "./format"
-import type { Brain, BrainStatus, CardBoard, ChatIndex, Selection, Timeline, View } from "./types"
+import type { Brain, BrainStatus, BriefBoard, CardBoard, ChatIndex, Selection, Timeline, View } from "./types"
 import { BlueprintView } from "./views/BlueprintView"
 import { CardsView } from "./views/CardsView"
 import { ConnectionsView } from "./views/ConnectionsView"
 import { SkillsView } from "./views/SkillsView"
 import { SystemView } from "./views/SystemView"
+import { DigestView } from "./views/DigestView"
 import { TimelineView } from "./views/TimelineView"
 
 const VIEWS: { id: View; label: string; hint: string }[] = [
@@ -17,6 +18,7 @@ const VIEWS: { id: View; label: string; hint: string }[] = [
   { id: "connections", label: "Connections", hint: "4" },
   { id: "timeline", label: "Timeline", hint: "5" },
   { id: "cards", label: "Cards", hint: "6" },
+  { id: "digest", label: "Digest", hint: "7" },
 ]
 
 function readView(): View {
@@ -45,6 +47,7 @@ export default function App() {
   const [cardsLoading, setCardsLoading] = useState(false)
   const [cardsError, setCardsError] = useState("")
   const [chats, setChats] = useState<ChatIndex | null>(null)
+  const [briefs, setBriefs] = useState<BriefBoard | null>(null)
 
   useEffect(() => {
     if (!window.location.hash) history.replaceState(null, "", "#/skills")
@@ -163,6 +166,13 @@ export default function App() {
       .catch(() => {
         if (!cancel) setChats(null)
       })
+    fetchBriefs()
+      .then((data) => {
+        if (!cancel) setBriefs(data)
+      })
+      .catch(() => {
+        if (!cancel) setBriefs(null)
+      })
     return () => {
       cancel = true
     }
@@ -234,6 +244,7 @@ export default function App() {
   const hits = useMemo(() => (brain ? searchHits(brain, query) : []), [brain, query])
   const focused = brain?.projects.find((project) => project.id === focus) ?? null
   const focusedChat = focused ? chats?.sessions.find((session) => session.project_id === focused.id && session.summary) : undefined
+  const focusedBrief = focused ? briefs?.briefs.find((item) => item.project_id === focused.id) : undefined
   const rootPath = brain?.root || status?.root || ""
   const rootName = brain?.root_name || status?.root_name || folderName(rootPath)
 
@@ -398,6 +409,7 @@ export default function App() {
             <span>
               Focused on <b>{focused.name}</b> · {focused.stats.files} files · {focused.stats.lines} lines
               {focusedChat ? <em className="focus-why">Why · {focusedChat.summary}</em> : null}
+              {focusedBrief?.next_step ? <em className="focus-why">Next · {focusedBrief.next_step}</em> : null}
             </span>
             <button type="button" onClick={() => go("blueprint")}>
               Blueprint
@@ -433,11 +445,13 @@ export default function App() {
               onOpenProject={openOnMap}
             />
           )}
+          {view === "digest" && <DigestView brain={brain} focus={focus} onOpenProject={openOnMap} />}
           {view === "cards" && (
             <CardsView
               brain={brain}
               data={cards}
               chats={chats}
+              briefs={briefs}
               loading={cardsLoading}
               error={cardsError}
               query={query}
@@ -451,6 +465,7 @@ export default function App() {
       <Drawer
         brain={brain}
         chats={chats}
+        briefs={briefs}
         selection={selection}
         onClose={() => setSelection(null)}
         onOpenFile={(id) => setSelection({ kind: "file", id })}
@@ -580,6 +595,14 @@ function Icon({ name }: { name: View }) {
       <svg viewBox="0 0 24 24" aria-hidden>
         <rect x="4" y="6" width="8" height="12" rx="1.2" />
         <rect x="12" y="6" width="8" height="12" rx="1.2" />
+      </svg>
+    )
+  }
+  if (name === "digest") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden>
+        <rect x="4" y="5" width="16" height="15" rx="2" />
+        <path d="M8 3v4M16 3v4M4 10h16M8 14h8M8 17h5" />
       </svg>
     )
   }

@@ -1,4 +1,4 @@
-import type { AskResponse, Brain, BrainStatus, CardBoard, ChatIndex, Timeline } from "./types"
+import type { AskResponse, Brain, BrainStatus, BriefBoard, CardBoard, ChatIndex, Digest, Timeline } from "./types"
 
 export async function fetchStatus(): Promise<BrainStatus> {
   const res = await fetch("/api/health")
@@ -37,6 +37,30 @@ export async function fetchChats(): Promise<ChatIndex> {
   const res = await fetch("/api/chats")
   if (!res.ok) throw new Error(await readDetail(res, "Copilot chats are not ready."))
   return res.json() as Promise<ChatIndex>
+}
+
+export async function fetchBriefs(): Promise<BriefBoard> {
+  const res = await fetch("/api/briefs")
+  if (!res.ok) throw new Error(await readDetail(res, "Handoff briefs are not ready."))
+  return res.json() as Promise<BriefBoard>
+}
+
+export async function saveHandoff(projectId: string): Promise<{ path: string; name: string }> {
+  const res = await fetch(`/api/brief/${encodeURIComponent(projectId)}/handoff`, { method: "POST" })
+  if (!res.ok) throw new Error(await readDetail(res, "Could not write BRAIN_HANDOFF.md."))
+  return res.json() as Promise<{ path: string; name: string }>
+}
+
+export async function fetchDigest(period: "day" | "week"): Promise<Digest> {
+  const res = await fetch(`/api/digest?period=${period}`)
+  if (!res.ok) throw new Error(await readDetail(res, "The digest is not ready."))
+  return res.json() as Promise<Digest>
+}
+
+export async function exportDigest(period: "day" | "week"): Promise<Digest> {
+  const res = await fetch(`/api/digest/export?period=${period}`, { method: "POST" })
+  if (!res.ok) throw new Error(await readDetail(res, "Could not save the digest."))
+  return res.json() as Promise<Digest>
 }
 
 export async function fetchCards(): Promise<CardBoard> {

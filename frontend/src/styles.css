@@ -482,6 +482,35 @@ pre {
 }
 .chat-files button:hover { background: rgba(61, 255, 154, 0.12); }
 .chat-meta { color: #6f8578; }
+.brief { display: grid; gap: 6px; }
+.brief > span, .digest-block h2 {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--green);
+}
+.brief-doing, .brief-next { margin: 0; line-height: 1.4; color: #e7f6ee; }
+.brief-next em {
+  font-style: normal; font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--gold); margin-right: 6px;
+}
+.brief-list, .brief-todos, .digest-projects, .digest-focus { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.brief-list li, .digest-projects li, .digest-focus li { color: var(--muted); font-size: 13px; }
+.brief-todos li { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; color: #d5e6dc; font-size: 13px; }
+.brief-todos i {
+  font-style: normal; font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em;
+  color: #2a2108; background: var(--gold); border-radius: 999px; padding: 1px 6px;
+}
+.brief-todos code, .digest-projects p, .digest-focus p { color: var(--muted); font-size: 12px; margin: 0; }
+.brief-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.digest { display: grid; gap: 14px; }
+.digest-block {
+  border: 1px solid rgba(61, 255, 154, 0.18);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, rgba(14, 22, 18, 0.95), rgba(8, 12, 10, 0.95));
+}
+.digest-block h2 { display: flex; justify-content: space-between; gap: 8px; margin: 0 0 8px; }
+.digest-block h2 em { font-style: normal; color: var(--muted); }
+.digest-focus { counter-reset: focus; }
+.digest-focus li { display: grid; gap: 4px; }
 
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
 .status-card {
@@ -551,7 +580,7 @@ pre {
   .tabbar button {
     background: transparent; border: 0; color: var(--muted);
     display: grid; justify-items: center; gap: 2px; font-size: 10px;
-    flex: 1 0 16%; min-width: 58px;
+    flex: 1 0 14%; min-width: 52px;
   }
   .tl-day { grid-template-columns: 1fr; gap: 4px; }
   .tl-files li { grid-template-columns: 1fr; }

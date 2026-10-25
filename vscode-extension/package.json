@@ -14,7 +14,8 @@
   },
   "categories": ["Other"],
   "activationEvents": [
-    "onCommand:aiBrain.openDashboard",
+      "onCommand:aiBrain.openDashboard",
+    "onCommand:aiBrain.openDigest",
     "onView:aiBrain.dashboard"
   ],
   "main": "./dist/extension.js",
@@ -25,6 +26,11 @@
         "title": "Open Dashboard",
         "category": "AI Brain",
         "icon": "$(pulse)"
+      },
+      {
+        "command": "aiBrain.openDigest",
+        "title": "Open Digest",
+        "category": "AI Brain"
       }
     ],
     "viewsContainers": {

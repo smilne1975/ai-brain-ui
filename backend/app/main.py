@@ -14,7 +14,9 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from pydantic import BaseModel, Field
 
 from backend.app.activity import build_cards, build_timeline, narrate_cards, narrate_timeline, window_days
+from backend.app.brief import build_brief, build_briefs, save_handoff
 from backend.app.copilot_chats import load_chats, merge_chats
+from backend.app.digest import build_digest, digest_mode, export_digest, write_scheduled
 from backend.app.ask import answer
 from backend.app.engine import Engine, Hub
 from backend.app.llm import resolve_provider
@@ -58,7 +60,9 @@ def create_app() -> FastAPI:
         app.state.hub = hub
         engine.open()
         log.info("serving %s while the folder scan runs", engine.root)
+        digest_task = asyncio.create_task(_digest_scheduler(engine))
         yield
+        digest_task.cancel()
         engine.close()
 
     app = FastAPI(title="AI Brain", lifespan=lifespan)
@@ -93,6 +97,52 @@ def create_app() -> FastAPI:
         engine: Engine = app.state.engine
         brain = _require_brain(engine)
         return load_chats(engine.root, brain)
+
+    @app.get("/api/briefs")
+    def briefs():
+        engine: Engine = app.state.engine
+        brain = _require_brain(engine)
+        return build_briefs(engine.root, brain, load_chats(engine.root, brain))
+
+    @app.get("/api/brief/{project_id}")
+    def brief(project_id: str):
+        engine: Engine = app.state.engine
+        brain = _require_brain(engine)
+        try:
+            return build_brief(engine.root, brain, project_id, load_chats(engine.root, brain))
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Folder is not in the scan") from None
+
+    @app.post("/api/brief/{project_id}/handoff")
+    def handoff(project_id: str):
+        engine: Engine = app.state.engine
+        brain = _require_brain(engine)
+        try:
+            return save_handoff(engine.root, brain, project_id, load_chats(engine.root, brain))
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Folder is not in the scan") from None
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail="Could not write BRAIN_HANDOFF.md") from exc
+
+    @app.get("/api/digest")
+    def digest(period: str = "week"):
+        engine: Engine = app.state.engine
+        brain = _require_brain(engine)
+        try:
+            return build_digest(engine.root, brain, period, load_chats(engine.root, brain))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="period must be day or week") from None
+
+    @app.post("/api/digest/export")
+    def digest_export(period: str = "week"):
+        engine: Engine = app.state.engine
+        brain = _require_brain(engine)
+        try:
+            return export_digest(engine.root, brain, period, load_chats(engine.root, brain))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="period must be day or week") from None
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail="Could not write the digest") from exc
 
     @app.get("/api/cards")
     def cards():
@@ -170,6 +220,23 @@ def create_app() -> FastAPI:
         return _spa(full_path)
 
     return app
+
+
+async def _digest_scheduler(engine: Engine) -> None:
+    if digest_mode() is None:
+        return
+    try:
+        while True:
+            if engine.brain:
+                try:
+                    written = write_scheduled(engine.root, engine.brain)
+                    if written:
+                        log.info("wrote scheduled digest %s", written)
+                except Exception:
+                    log.exception("scheduled digest failed")
+            await asyncio.sleep(2)
+    except asyncio.CancelledError:
+        return
 
 
 def _require_brain(engine: Engine) -> dict:

@@ -1,4 +1,48 @@
-export type View = "skills" | "blueprint" | "system" | "connections" | "timeline" | "cards"
+export type View = "skills" | "blueprint" | "system" | "connections" | "timeline" | "cards" | "digest"
+
+export type BriefTodo = { text: string; rel: string; kind: string; line?: number }
+export type BriefFile = { rel: string; file_id: string | null; why: string }
+
+export type Brief = {
+  project_id: string
+  name: string
+  generated_at: string
+  source: string
+  last_doing: string
+  decisions: string[]
+  todos: BriefTodo[]
+  todo_count: number
+  fixme_count: number
+  next_step: string
+  key_files: BriefFile[]
+  run_command: string
+  copy_text: string
+}
+
+export type BriefBoard = { generated_at: string; source: string; briefs: Brief[] }
+
+export type DigestProject = { project_id: string; name: string; detail?: string; files?: number }
+export type DigestTodo = { project_id: string; project: string; rel: string; text: string; kind: string }
+export type DigestChat = { id?: string; project_id: string | null; project: string; when: string | null; prompt: string; summary: string }
+export type DigestFocus = { project_id: string; name: string; why: string }
+
+export type Digest = {
+  period: "day" | "week"
+  label: string
+  generated_at: string
+  source: string
+  window_start: string
+  window_end: string
+  summary?: string
+  touched: DigestProject[]
+  newly_stale: DigestProject[]
+  newly_abandoned: DigestProject[]
+  todos: { open: number; fixmes: number; top: DigestTodo[] }
+  chats: DigestChat[]
+  focus: DigestFocus[]
+  markdown: string
+  saved_path?: string
+}
 
 export type TimelineFile = {
   rel: string

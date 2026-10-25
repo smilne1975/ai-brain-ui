@@ -12,7 +12,8 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     output,
     vscode.window.registerWebviewViewProvider("aiBrain.dashboard", provider),
-    vscode.commands.registerCommand("aiBrain.openDashboard", () => openDashboard(context, provider)),
+    vscode.commands.registerCommand("aiBrain.openDashboard", () => openDashboard(context, provider, "/")),
+    vscode.commands.registerCommand("aiBrain.openDigest", () => openDashboard(context, provider, "/#/digest")),
     { dispose: () => stopStarted() },
   );
 }
@@ -38,21 +39,26 @@ class DashboardView implements vscode.WebviewViewProvider {
     });
   }
 
-  show(port: number): void {
+  show(port: number, hash = "/"): void {
     if (!this.view) return;
-    this.view.webview.html = panelHtml(port);
+    this.view.webview.html = panelHtml(port, hash);
   }
 }
 
-async function openDashboard(context: vscode.ExtensionContext, sidebar: DashboardView): Promise<void> {
+async function openDashboard(context: vscode.ExtensionContext, sidebar: DashboardView, hash = "/"): Promise<void> {
   const port = await ensureServer(context);
   if (!port) return;
-  sidebar.show(port);
-  const panel = vscode.window.createWebviewPanel("aiBrain.panel", "AI Brain", vscode.ViewColumn.Active, {
-    enableScripts: true,
-    retainContextWhenHidden: true,
-  });
-  panel.webview.html = panelHtml(port);
+  sidebar.show(port, hash);
+  const panel = vscode.window.createWebviewPanel(
+    hash.includes("digest") ? "aiBrain.digest" : "aiBrain.panel",
+    hash.includes("digest") ? "AI Brain Digest" : "AI Brain",
+    vscode.ViewColumn.Active,
+    {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+    },
+  );
+  panel.webview.html = panelHtml(port, hash);
   await vscode.commands.executeCommand("aiBrain.dashboard.focus");
 }
 
@@ -196,8 +202,8 @@ function stopStarted(): void {
   started = undefined;
 }
 
-function panelHtml(port: number): string {
-  const url = `http://127.0.0.1:${port}/`;
+function panelHtml(port: number, hash = "/"): string {
+  const url = `http://127.0.0.1:${port}${hash.startsWith("/") ? hash : `/${hash}`}`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>

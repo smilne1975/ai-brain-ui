@@ -9,7 +9,7 @@ Opens the local AI Brain dashboard inside VS Code.
 3. Pick `releases/ai-brain-0.1.0.vsix` from this repo (the same file is also at `vscode-extension/` after a local package).
 4. Reload if VS Code asks.
 
-The activity bar shows an **AI Brain** icon. The command palette command is **AI Brain: Open Dashboard**.
+The activity bar shows an **AI Brain** icon. The command palette commands are **AI Brain: Open Dashboard** and **AI Brain: Open Digest**.
 
 ## What the command does
 

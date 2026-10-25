@@ -2,7 +2,7 @@
 
 A local mission-control view of a messy folder of AI and coding projects: markdown notes, Python scripts, configs, and half-finished Copilot experiments. It scans the folder on your machine, then draws how the work connects.
 
-Six views:
+Seven views:
 
 - **Skills** — radial map of capabilities detected in the files
 - **Blueprint** — flowchart of each folder (and of the whole corpus), with an ask bar. This is the map.
@@ -10,6 +10,7 @@ Six views:
 - **Connections** — services and APIs the files mention, and whether a key *name* is present
 - **Timeline** — “what was I doing?”, grouped by day and week across every scanned folder
 - **Cards** — one plain-English status card per folder
+- **Digest** — today or this week across every folder
 
 Nothing is uploaded. The app binds to `127.0.0.1`.
 
@@ -98,6 +99,10 @@ Open **Cards** (or press `6`). One card per folder:
 
 `GET /api/cards` returns the grid. Heuristics work with no API key. A configured provider can replace the blurb; it does not read `.env` values.
 
+Each card, and the folder detail on the map, also has **Pick up where I left off**. That brief says what Stu was last doing, lists recent decisions and open TODOs, and suggests a next step. It is built from the latest save, git commit subjects when the folder is its own repo, TODO and FIXME markers, and the latest Copilot prompts. **Copy for new chat** puts a ready-to-paste block on the clipboard: the brief, the key files, and the run command. **Save BRAIN_HANDOFF.md** writes that block into the project folder, and only when that button is clicked.
+
+`GET /api/briefs` returns every brief. `GET /api/brief/{project}` returns one. `POST /api/brief/{project}/handoff` writes `BRAIN_HANDOFF.md`. With no model key the sentences are local. Set `BRAIN_BRIEF_LLM=1` as well as a provider key to let the model rewrite them. Chat text is not sent otherwise. `.env` values are never included.
+
 ## Copilot chat history
 
 Each project card, and the folder detail on the Blueprint map, has a **Why / Chat history** section. The Timeline lists the same sessions on the day they happened. Prompts that name a scanned file link to that file.
@@ -123,6 +128,23 @@ set BRAIN_COPILOT_CHATS_ROOT=%APPDATA%\Code\User
 set BRAIN_COPILOT_LLM=1
 start.bat -Projects "D:\notes\ai-projects"
 ```
+
+## Digest
+
+Open **Digest** (or press `7`). Choose **Today** or **This week**.
+
+The page lists folders whose files were saved in the window, folders that slipped from active to stale (last save crossed 7 days) or on to abandoned (30 days), the open TODO and FIXME count with the top items, notable Copilot sessions, and a short suggested focus list.
+
+`GET /api/digest?period=day|week` returns that payload. **Export markdown** writes it to `.brain/digests/` under the projects folder (gitignored) and downloads the same file. The server does not write a digest on its own unless you set `BRAIN_DIGEST=daily` or `BRAIN_DIGEST=weekly` before starting. That writes one markdown file per day or ISO week while the process is running, and skips the file if it is already there.
+
+```bat
+set BRAIN_DIGEST=weekly
+start.bat -Projects "D:\notes\ai-projects"
+```
+
+A model rewrites the digest intro only when a provider key is set and `BRAIN_DIGEST_LLM=1`. The default is the local summary. `.env` values are never read.
+
+In VS Code, **AI Brain: Open Digest** opens the same page inside the dashboard webview. The Digest tab is also on the dashboard the activity-bar icon already loads.
 
 ## VS Code panel
 
