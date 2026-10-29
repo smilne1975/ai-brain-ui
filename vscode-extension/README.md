@@ -6,10 +6,12 @@ Opens the local AI Brain dashboard inside VS Code.
 
 1. In VS Code, open the Extensions view.
 2. Open the `...` menu and choose **Extensions: Install from VSIX...**.
-3. Pick `releases/ai-brain-0.1.0.vsix` from this repo (the same file is also at `vscode-extension/` after a local package).
+3. Pick `releases/ai-brain-0.2.0.vsix` from this repo.
 4. Reload if VS Code asks.
 
 The activity bar shows an **AI Brain** icon. The command palette commands are **AI Brain: Open Dashboard** and **AI Brain: Open Digest**.
+
+Installing the extension also registers an MCP server named **AI Brain** for Copilot agent mode. VS Code starts `python -m brain_mcp` in the repo, with `BRAIN_ROOT` set to the projects folder. You do not need a hand-written `mcp.json`. The dashboard **Copilot** tab can copy one if you want it.
 
 ## What the command does
 

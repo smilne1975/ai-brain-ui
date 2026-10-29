@@ -41,6 +41,25 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def load_latest(root: Path) -> tuple[dict, str] | None:
+    """Return the cached brain for this folder, even if the signature moved."""
+    resolved = str(Path(root).expanduser().resolve())
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT brain, updated_at FROM scans WHERE root = ? OR root = ?",
+            (resolved, str(root)),
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        data = json.loads(row[0])
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data, str(row[1] or "")
+
+
 def load_scan(root: Path, signature: str) -> dict | None:
     with _connect() as conn:
         row = conn.execute("SELECT brain FROM scans WHERE root = ? AND signature = ?", (str(root), signature)).fetchone()

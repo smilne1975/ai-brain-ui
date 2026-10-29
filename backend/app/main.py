@@ -21,6 +21,8 @@ from backend.app.ask import answer
 from backend.app.engine import Engine, Hub
 from backend.app.llm import resolve_provider
 from backend.app.microstation import build_microstation
+from backend.app.mcp_rpc import dispatch
+from backend.app.mcp_tools import doctor_report, usage_report
 from backend.app.scanner import file_excerpt
 
 log = logging.getLogger("brain")
@@ -162,6 +164,38 @@ def create_app() -> FastAPI:
         if match is None:
             raise HTTPException(status_code=404, detail="Not a MicroStation Python project")
         return match
+
+    @app.get("/api/mcp/usage")
+    def mcp_usage():
+        engine: Engine = app.state.engine
+        return usage_report(engine.root, engine)
+
+    @app.get("/api/mcp/doctor")
+    def mcp_doctor():
+        engine: Engine = app.state.engine
+        return doctor_report(engine.root, engine)
+
+    @app.api_route("/mcp", methods=["GET", "POST"])
+    async def mcp_endpoint(request: Request):
+        engine: Engine = app.state.engine
+        if request.method == "GET":
+            return {
+                "name": "AI Brain",
+                "transport": "json-rpc",
+                "protocolVersion": "2024-11-05",
+                "note": "POST a JSON-RPC message. Tools are read-only and use the cached index.",
+            }
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="MCP request must be JSON") from None
+        if isinstance(body, list):
+            answers = [item for item in (dispatch(message, engine.root, engine) for message in body) if item is not None]
+            return JSONResponse(answers)
+        answer = dispatch(body, engine.root, engine)
+        if answer is None:
+            return JSONResponse({"ok": True}, status_code=202)
+        return JSONResponse(answer)
 
     @app.get("/api/cards")
     def cards():

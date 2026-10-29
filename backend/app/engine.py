@@ -136,6 +136,9 @@ class Engine:
                 generation=generation,
             )
             snapshot = self._status_unlocked()
+        from backend.app.mcp_tools import write_phase
+
+        write_phase(self.root, "scanning")
         threading.Thread(
             target=self._scan_worker,
             args=(force, generation),
@@ -225,6 +228,9 @@ class Engine:
                 self._worker_alive = False
                 snapshot = self._status_unlocked()
             self.hub.publish(json.dumps({"type": "progress", **self._public_progress(snapshot)}))
+            from backend.app.mcp_tools import write_phase
+
+            write_phase(self.root, "error")
             return
         except Exception:
             log.exception("scan failed")
@@ -238,6 +244,9 @@ class Engine:
                 self._worker_alive = False
                 snapshot = self._status_unlocked()
             self.hub.publish(json.dumps({"type": "progress", **self._public_progress(snapshot)}))
+            from backend.app.mcp_tools import write_phase
+
+            write_phase(self.root, "error")
             return
         with self.lock:
             if generation != self._generation:
@@ -268,6 +277,9 @@ class Engine:
             stats["files"],
             brain["provider"]["label"],
         )
+        from backend.app.mcp_tools import write_phase
+
+        write_phase(self.root, "ready")
         self.hub.publish(json.dumps({"type": "updated"}))
         self._kick_enrich(brain.get("signature"))
         if follow_up is not None:

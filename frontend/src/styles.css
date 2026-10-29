@@ -583,6 +583,36 @@ pre {
 .pitfall-amber { border-color: rgba(240, 193, 74, 0.75); }
 .pitfall-amber strong { color: #ffe7a3; }
 
+.mcp-status { display: flex; gap: 12px; align-items: flex-start; }
+.mcp-status p { margin: 2px 0 0; }
+.mcp-light {
+  width: 14px; height: 14px; border-radius: 50%; margin-top: 4px; flex: none;
+  box-shadow: 0 0 12px currentColor;
+}
+.mcp-light-registered { background: var(--green); color: var(--green); }
+.mcp-light-sample { background: var(--gold); color: var(--gold); }
+.mcp-light-idle { background: var(--danger); color: var(--danger); }
+.mcp-tools { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.mcp-tools li { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; }
+.mcp-tools strong { font-family: var(--mono); font-size: 13px; }
+.mcp-tools span { display: block; color: var(--muted); font-size: 12px; }
+.mcp-tools em { font-style: normal; color: var(--green); font-family: var(--mono); }
+.mcp-bar { grid-column: 1 / -1; height: 6px; border-radius: 999px; background: #121a16; overflow: hidden; }
+.mcp-bar i { display: block; height: 100%; background: var(--green); box-shadow: 0 0 10px rgba(61, 255, 154, 0.7); }
+.mcp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.mcp-table th, .mcp-table td { text-align: left; padding: 6px 8px 6px 0; vertical-align: top; border-bottom: 1px solid rgba(61, 255, 154, 0.12); }
+.mcp-table td:nth-child(3) { font-family: var(--mono); color: var(--muted); }
+.mcp-checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.mcp-check { display: grid; gap: 3px; border-left: 3px solid var(--line); padding: 4px 0 4px 10px; }
+.mcp-check strong { text-transform: uppercase; letter-spacing: 0.04em; font-size: 12px; }
+.mcp-check span, .mcp-check em { color: var(--muted); font-size: 12.5px; font-style: normal; }
+.mcp-check-pass { border-color: var(--green); }
+.mcp-check-pass strong { color: var(--green); }
+.mcp-check-warn { border-color: var(--gold); }
+.mcp-check-warn strong { color: #ffe7a3; }
+.mcp-check-fail { border-color: var(--danger); }
+.mcp-check-fail strong { color: #ffd0d6; }
+
 .tabbar { display: none; }
 
 @media (max-width: 980px) {
@@ -612,7 +642,7 @@ pre {
   .tabbar button {
     background: transparent; border: 0; color: var(--muted);
     display: grid; justify-items: center; gap: 2px; font-size: 10px;
-    flex: 1 0 14%; min-width: 52px;
+    flex: 1 0 12%; min-width: 46px;
   }
   .tl-day { grid-template-columns: 1fr; gap: 4px; }
   .tl-files li { grid-template-columns: 1fr; }

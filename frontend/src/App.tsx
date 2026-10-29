@@ -9,6 +9,7 @@ import { ConnectionsView } from "./views/ConnectionsView"
 import { SkillsView } from "./views/SkillsView"
 import { SystemView } from "./views/SystemView"
 import { DigestView } from "./views/DigestView"
+import { CopilotLinkView } from "./views/CopilotLinkView"
 import { TimelineView } from "./views/TimelineView"
 
 const VIEWS: { id: View; label: string; hint: string }[] = [
@@ -16,6 +17,7 @@ const VIEWS: { id: View; label: string; hint: string }[] = [
   { id: "blueprint", label: "Blueprint", hint: "2" },
   { id: "system", label: "System", hint: "3" },
   { id: "connections", label: "Connections", hint: "4" },
+  { id: "copilot", label: "Copilot", hint: "8" },
   { id: "timeline", label: "Timeline", hint: "5" },
   { id: "cards", label: "Cards", hint: "6" },
   { id: "digest", label: "Digest", hint: "7" },
@@ -432,6 +434,7 @@ export default function App() {
           {view === "connections" && (
             <ConnectionsView brain={brain} query={query} focus={focus} selection={selection} onSelect={setSelection} />
           )}
+          {view === "copilot" && <CopilotLinkView />}
           {view === "timeline" && (
             <TimelineView
               brain={brain}
@@ -584,6 +587,14 @@ function Icon({ name }: { name: View }) {
       <svg viewBox="0 0 24 24" aria-hidden>
         <circle cx="12" cy="12" r="3" />
         <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
+      </svg>
+    )
+  }
+  if (name === "copilot") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden>
+        <circle cx="8" cy="12" r="3" />
+        <path d="M11 12h8M16 9v6" />
       </svg>
     )
   }

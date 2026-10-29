@@ -1,4 +1,4 @@
-import type { AskResponse, Brain, BrainStatus, BriefBoard, CardBoard, ChatIndex, Digest, Timeline } from "./types"
+import type { AskResponse, Brain, BrainStatus, BriefBoard, CardBoard, ChatIndex, Digest, McpDoctor, McpUsage, Timeline } from "./types"
 
 export async function fetchStatus(): Promise<BrainStatus> {
   const res = await fetch("/api/health")
@@ -67,6 +67,18 @@ export async function fetchCards(): Promise<CardBoard> {
   const res = await fetch("/api/cards")
   if (!res.ok) throw new Error(await readDetail(res, "Project cards are not ready."))
   return res.json() as Promise<CardBoard>
+}
+
+export async function fetchMcpUsage(): Promise<McpUsage> {
+  const res = await fetch("/api/mcp/usage")
+  if (!res.ok) throw new Error(await readDetail(res, "MCP usage is not ready."))
+  return res.json() as Promise<McpUsage>
+}
+
+export async function fetchMcpDoctor(): Promise<McpDoctor> {
+  const res = await fetch("/api/mcp/doctor")
+  if (!res.ok) throw new Error(await readDetail(res, "The doctor could not run."))
+  return res.json() as Promise<McpDoctor>
 }
 
 async function readDetail(res: Response, fallback: string): Promise<string> {

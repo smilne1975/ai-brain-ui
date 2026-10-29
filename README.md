@@ -2,12 +2,13 @@
 
 A local mission-control view of a messy folder of AI and coding projects: markdown notes, Python scripts, configs, and half-finished Copilot experiments. It scans the folder on your machine, then draws how the work connects.
 
-Seven views:
+Eight views:
 
 - **Skills** — radial map of capabilities detected in the files
 - **Blueprint** — flowchart of each folder (and of the whole corpus), with an ask bar. This is the map.
 - **System** — circular meters, one bar per file
 - **Connections** — services and APIs the files mention, and whether a key *name* is present
+- **Copilot** — MCP tools Copilot agent mode can call, plus a doctor (press `8`)
 - **Timeline** — “what was I doing?”, grouped by day and week across every scanned folder
 - **Cards** — one plain-English status card per folder
 - **Digest** — today or this week across every folder
@@ -122,6 +123,50 @@ The demo folder `demo-projects/levels-report` registers `MYREPORT LEVELS`, impor
 
 ![MicroStation key-ins on the levels-report card](docs/microstation-keyins.png)
 
+## Copilot Link
+
+GitHub Copilot agent mode can query the indexed folders through an MCP server instead of grepping the tree. The tools are read-only, local, and work with no API key. They use the SQLite scan cache. They do not start a scan. If a scan is already running, they answer from the last finished index and say so.
+
+Open **Copilot** (or press `8`). The status light shows whether VS Code has registered the server and when it was last called. Each tool has a call count. **Run doctor** checks the index, the Python path, the extension version, and registration. **Copy mcp.json snippet** copies a stdio config that uses the same Python interpreter the running server was started with.
+
+Tools:
+
+- `search_projects` — same retrieval as the ask bar in heuristic mode
+- `get_brief` — the pick-up brief for one folder
+- `get_timeline` — saves, git subjects, and Copilot sessions
+- `explain_file` — imports, skills, unfinished markers, and MicroStation key-ins
+- `list_projects` — status, entry point, and run command
+- resource `brain://digest/latest` — the latest daily digest markdown
+
+`.env` values are never returned. Every answer is passed through the same redaction as the rest of the app and capped at about 20 KB. Calls are appended to `.brain/mcp_usage.jsonl` under the projects folder (gitignored). `GET /api/mcp/usage` and `GET /api/mcp/doctor` feed the panel. While the dashboard is running, the same JSON-RPC is available at `POST /mcp`.
+
+The VS Code extension registers the server, so a manual `mcp.json` is optional. Install `releases/ai-brain-0.2.0.vsix`, then Copilot agent mode lists **AI Brain**. The extension starts `python -m brain_mcp` with `BRAIN_ROOT` set to the projects folder. It does not run PowerShell.
+
+Manual fallback, from the repo root, if you prefer a file. On Windows, `command` can be `py` and the paths can be `C:\...`:
+
+```json
+{
+  "servers": {
+    "ai-brain": {
+      "type": "stdio",
+      "command": "py",
+      "args": ["-m", "brain_mcp"],
+      "cwd": "C:\\src\\ai-brain-ui",
+      "env": {
+        "BRAIN_ROOT": "C:\\Users\\Stu\\Documents",
+        "BRAIN_CACHE": "C:\\src\\ai-brain-ui\\.brain\\cache.sqlite"
+      }
+    }
+  }
+}
+```
+
+Put that in `.vscode/mcp.json`. `start.bat` still starts the dashboard. The stdio server only reads the cache that dashboard writes.
+
+Demo mode (the scan folder is named `demo-projects`) shows sample calls so the panel is not empty before Copilot has connected. Set `BRAIN_MCP_DEMO=0` to hide them.
+
+![Copilot Link panel](docs/copilot-link.png)
+
 ## Copilot chat history
 
 Each project card, and the folder detail on the Blueprint map, has a **Why / Chat history** section. The Timeline lists the same sessions on the day they happened. Prompts that name a scanned file link to that file.
@@ -167,11 +212,11 @@ In VS Code, **AI Brain: Open Digest** opens the same page inside the dashboard w
 
 ## VS Code panel
 
-`vscode-extension/` is a small extension that opens this dashboard as a webview. A built package is committed at `releases/ai-brain-0.1.0.vsix`.
+`vscode-extension/` is a small extension that opens this dashboard as a webview. A built package is committed at `releases/ai-brain-0.2.0.vsix`.
 
 1. In VS Code, open Extensions.
 2. Open the `...` menu and choose **Extensions: Install from VSIX...**.
-3. Select `releases/ai-brain-0.1.0.vsix`.
+3. Select `releases/ai-brain-0.2.0.vsix`.
 4. Use the activity-bar **AI Brain** icon, or run **AI Brain: Open Dashboard** from the command palette.
 
 The panel loads `http://127.0.0.1:8741/`. The port is the `aiBrain.port` setting. If that server is not running, the extension asks, then starts it with `python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8741`. It does not run PowerShell. On Windows it tries `py`, then `python`, then `python3`.
@@ -184,7 +229,7 @@ Rebuild the package from the repo:
 cd vscode-extension
 npm install
 npm run compile
-npx vsce package --allow-missing-repository -o ../releases/ai-brain-0.1.0.vsix
+npx vsce package --allow-missing-repository -o ../releases/ai-brain-0.2.0.vsix
 ```
 
 ## How a scan becomes the views

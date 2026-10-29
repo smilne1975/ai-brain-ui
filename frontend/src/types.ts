@@ -1,4 +1,4 @@
-export type View = "skills" | "blueprint" | "system" | "connections" | "timeline" | "cards" | "digest"
+export type View = "skills" | "blueprint" | "system" | "connections" | "copilot" | "timeline" | "cards" | "digest"
 
 export type BriefTodo = { text: string; rel: string; kind: string; line?: number }
 export type BriefFile = { rel: string; file_id: string | null; why: string }
@@ -337,5 +337,38 @@ export const CATEGORY_COLOR: Record<string, string> = {
   Data: "#ffb086",
   Interfaces: "#9ad0ff",
   Devtools: "#ff8ad4",
+  CAD: "#c6f54e",
   Notes: "#e7fff3",
 }
+
+export type McpToolCount = { tool: string; count: number }
+export type McpToolInfo = { name: string; description: string }
+export type McpCall = {
+  ts: string
+  tool: string
+  args: string
+  bytes: number
+  ms: number
+  truncated: boolean
+  source: string
+}
+export type McpUsage = {
+  counts: McpToolCount[]
+  last_call: string | null
+  recent: McpCall[]
+  tools: McpToolInfo[]
+  resource: string
+  snippet: string
+  link: { state: "registered" | "sample" | "idle"; label: string; last_call: string | null; detail: string }
+  scanning: boolean
+  demo: boolean
+  index_source: string
+}
+export type McpCheck = {
+  id: string
+  status: "pass" | "warn" | "fail"
+  title: string
+  detail: string
+  fix: string
+}
+export type McpDoctor = { generated_at: string; checks: McpCheck[]; snippet: string }

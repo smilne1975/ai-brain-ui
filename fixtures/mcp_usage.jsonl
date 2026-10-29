@@ -1,0 +1,12 @@
+{"hours_ago": 0.4, "tool": "search_projects", "args": "query=LEVELS key-in limit=5", "bytes": 920, "ms": 14, "truncated": false}
+{"hours_ago": 1.1, "tool": "search_projects", "args": "query=billing bucket triage limit=8", "bytes": 1404, "ms": 18, "truncated": false}
+{"hours_ago": 2.0, "tool": "search_projects", "args": "query=pandas MS_PYTHON limit=5", "bytes": 760, "ms": 11, "truncated": false}
+{"hours_ago": 3.5, "tool": "get_brief", "args": "project=levels-report", "bytes": 1680, "ms": 22, "truncated": false}
+{"hours_ago": 5.0, "tool": "get_brief", "args": "project=inbox-triage", "bytes": 1540, "ms": 20, "truncated": false}
+{"hours_ago": 6.2, "tool": "list_projects", "args": "list_projects", "bytes": 2100, "ms": 16, "truncated": false}
+{"hours_ago": 8.0, "tool": "get_timeline", "args": "days=7 project=levels-report", "bytes": 980, "ms": 19, "truncated": false}
+{"hours_ago": 9.5, "tool": "explain_file", "args": "path=levels-report/levels.py", "bytes": 1320, "ms": 12, "truncated": false}
+{"hours_ago": 12.0, "tool": "explain_file", "args": "path=inbox-triage/triage.py", "bytes": 1188, "ms": 13, "truncated": false}
+{"hours_ago": 20.0, "tool": "digest", "args": "uri=brain://digest/latest", "bytes": 2400, "ms": 28, "truncated": false}
+{"hours_ago": 26.0, "tool": "search_projects", "args": "query=slack export limit=5", "bytes": 640, "ms": 9, "truncated": false}
+{"hours_ago": 30.0, "tool": "list_projects", "args": "list_projects", "bytes": 2050, "ms": 15, "truncated": false}

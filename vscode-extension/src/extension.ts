@@ -14,6 +14,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider("aiBrain.dashboard", provider),
     vscode.commands.registerCommand("aiBrain.openDashboard", () => openDashboard(context, provider, "/")),
     vscode.commands.registerCommand("aiBrain.openDigest", () => openDashboard(context, provider, "/#/digest")),
+    registerMcp(context),
     { dispose: () => stopStarted() },
   );
 }
@@ -42,6 +43,62 @@ class DashboardView implements vscode.WebviewViewProvider {
   show(port: number, hash = "/"): void {
     if (!this.view) return;
     this.view.webview.html = panelHtml(port, hash);
+  }
+}
+
+function registerMcp(context: vscode.ExtensionContext): vscode.Disposable {
+  const lm = vscode.lm as unknown as {
+    registerMcpServerDefinitionProvider?: (id: string, provider: McpProvider) => vscode.Disposable;
+  };
+  if (!lm.registerMcpServerDefinitionProvider) {
+    return new vscode.Disposable(() => undefined);
+  }
+  const registration = lm.registerMcpServerDefinitionProvider("aiBrain.mcp", {
+    async provideMcpServerDefinitions() {
+      const repo = findRepo(context);
+      if (!repo) return [];
+      const config = readConfig();
+      const python = (await findPython(config.pythonPath)) ?? (process.platform === "win32" ? "py" : "python3");
+      const projects = projectsFolder(repo);
+      stampRegistration(repo, projects);
+      const env: Record<string, string> = {
+        BRAIN_ROOT: projects,
+        PYTHONPATH: repo,
+      };
+      const Stdio = (vscode as unknown as { McpStdioServerDefinition?: McpStdioCtor }).McpStdioServerDefinition;
+      if (!Stdio) return [];
+      const definition = new Stdio("AI Brain", python, ["-m", "brain_mcp"], env, "0.2.0");
+      definition.cwd = vscode.Uri.file(repo);
+      return [definition];
+    },
+  });
+  return registration;
+}
+
+type McpProvider = {
+  provideMcpServerDefinitions(): Promise<McpDefinition[]>;
+};
+
+type McpDefinition = { cwd?: vscode.Uri };
+
+type McpStdioCtor = new (
+  label: string,
+  command: string,
+  args: string[],
+  env: Record<string, string>,
+  version?: string,
+) => McpDefinition;
+
+function stampRegistration(repo: string, projects: string): void {
+  const payload = JSON.stringify({ registered: true, at: new Date().toISOString(), version: "0.2.0" });
+  for (const dir of [repo, projects]) {
+    try {
+      const folder = path.join(dir, ".brain");
+      fs.mkdirSync(folder, { recursive: true });
+      fs.writeFileSync(path.join(folder, "mcp_registered.json"), payload, "utf8");
+    } catch {
+      /* the dashboard doctor still explains how to register by hand */
+    }
   }
 }
 
