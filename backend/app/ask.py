@@ -6,6 +6,7 @@ import re
 
 from backend.app.catalog import SERVICES
 from backend.app.llm import complete
+from backend.app.microstation import index_for_ask
 from backend.app.redact import redact
 
 _STOP = {
@@ -64,6 +65,9 @@ def _scoped_projects(brain: dict, project_id: str | None) -> list[dict]:
 
 def _heuristic(brain: dict, question: str, projects: list[dict], files: list[dict]) -> dict:
     low = question.lower()
+    keyin = _keyin_answer(brain, question, projects)
+    if keyin and (re.search(r"key[\s-]?ins?\b", low) or _keyin_phrase(question, brain)):
+        return keyin
     if re.search(r"unfinished|todo|fixme|\bwip\b|\bhack\b|left to do", low):
         return _todos(projects, files)
     service = _match_service(low, brain["connections"])
@@ -261,6 +265,69 @@ def _named_projects(question: str, projects: list[dict]) -> list[dict]:
     return hits
 
 
+def _keyin_phrase(question: str, brain: dict) -> bool:
+    q = question.casefold()
+    for row in index_for_ask(brain):
+        phrase = (row.get("keyin") or "").casefold()
+        if phrase and phrase in q:
+            return True
+    return False
+
+
+def _keyin_answer(brain: dict, question: str, projects: list[dict]) -> dict | None:
+    allowed = {project["id"] for project in projects}
+    rows = [row for row in index_for_ask(brain) if row["project_id"] in allowed]
+    if not rows:
+        return None
+    q = question.casefold()
+    mentions = re.search(r"key[\s-]?ins?\b", q) is not None
+    hits = []
+    for row in rows:
+        phrase = (row.get("keyin") or "").casefold()
+        if phrase and phrase in q:
+            hits.append(row)
+            continue
+        if not mentions:
+            continue
+        for word in re.findall(r"[A-Za-z0-9]{4,}", row.get("keyin") or ""):
+            if re.search(rf"\b{re.escape(word.casefold())}\b", q):
+                hits.append(row)
+                break
+    if not hits and mentions:
+        hits = rows[:12]
+    if not hits:
+        return None
+    lines = []
+    citations = []
+    for row in hits[:8]:
+        if row.get("found") and row.get("rel"):
+            target = f"{row['rel']}:{row['function']}"
+        elif row.get("function"):
+            target = f"{row['function']} was not found"
+        else:
+            target = "no handler"
+        lines.append(f"{row['keyin']} is in {row['project_name']} and calls {target}.")
+        if row.get("file_id"):
+            citations.append(
+                {
+                    "id": row["file_id"],
+                    "label": f"{row['project_name']}/{row['rel'] or row['keyin']}",
+                    "kind": "file",
+                    "project_id": row["project_id"],
+                }
+            )
+        elif row.get("xml_id"):
+            citations.append(
+                {
+                    "id": row["xml_id"],
+                    "label": f"{row['project_name']}/{row['xml']}",
+                    "kind": "file",
+                    "project_id": row["project_id"],
+                }
+            )
+    return {"answer": "\n".join(lines), "citations": _unique_cites(citations)[:6], "provider": "heuristic"}
+
+
 def _cite(rec: dict, names: dict[str, str]) -> dict:
     project = names.get(rec["project_id"], rec["project_id"])
     return {
@@ -303,9 +370,15 @@ def _pack(projects: list[dict], files: list[dict], question: str) -> str:
     parts = []
     for project in projects[:6]:
         keys = ", ".join(project.get("stats", {}).get("env_keys") or []) or "none"
-        parts.append(
-            f"# Folder {project['name']} ({project['id']})\n{project['summary']}\nEnv key names: {keys}"
-        )
+        block = f"# Folder {project['name']} ({project['id']})\n{project['summary']}\nEnv key names: {keys}"
+        report = project.get("microstation") or None
+        if report and report.get("keyins"):
+            lines = []
+            for item in report["keyins"][:12]:
+                target = f"{item.get('rel') or 'missing'}:{item.get('function') or 'missing'}"
+                lines.append(f"{item.get('keyin')} -> {target}")
+            block += "\nKey-ins:\n" + "\n".join(lines)
+        parts.append(block)
     for rec in chosen:
         if rec["kind"] == "env":
             parts.append(f"## {rec['project_id']}/{rec['rel']}\nKey names only: {', '.join(rec.get('env_keys') or [])}")

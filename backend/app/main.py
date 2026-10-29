@@ -20,6 +20,7 @@ from backend.app.digest import build_digest, digest_mode, export_digest, write_s
 from backend.app.ask import answer
 from backend.app.engine import Engine, Hub
 from backend.app.llm import resolve_provider
+from backend.app.microstation import build_microstation
 from backend.app.scanner import file_excerpt
 
 log = logging.getLogger("brain")
@@ -144,6 +145,24 @@ def create_app() -> FastAPI:
         except OSError as exc:
             raise HTTPException(status_code=500, detail="Could not write the digest") from exc
 
+    @app.get("/api/microstation")
+    def microstation_index():
+        engine: Engine = app.state.engine
+        return _microstation_board(engine)
+
+    @app.get("/api/microstation/{project_id}")
+    def microstation_project(project_id: str):
+        engine: Engine = app.state.engine
+        brain = _require_brain(engine)
+        known = {project["id"] for project in brain.get("projects") or []}
+        if project_id not in known:
+            raise HTTPException(status_code=404, detail="Folder is not in the scan")
+        board = _microstation_board(engine)
+        match = next((item for item in board["projects"] if item["project_id"] == project_id), None)
+        if match is None:
+            raise HTTPException(status_code=404, detail="Not a MicroStation Python project")
+        return match
+
     @app.get("/api/cards")
     def cards():
         engine: Engine = app.state.engine
@@ -237,6 +256,14 @@ async def _digest_scheduler(engine: Engine) -> None:
             await asyncio.sleep(2)
     except asyncio.CancelledError:
         return
+
+
+def _microstation_board(engine: Engine) -> dict:
+    brain = _require_brain(engine)
+    projects = brain.get("projects") or []
+    if projects and all("microstation" in project for project in projects):
+        return {"projects": [project["microstation"] for project in projects if project.get("microstation")]}
+    return build_microstation(engine.root, projects, brain.get("files") or [])
 
 
 def _require_brain(engine: Engine) -> dict:

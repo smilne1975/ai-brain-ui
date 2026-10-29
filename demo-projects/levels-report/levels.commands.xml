@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<KeyinTree xmlns="http://www.bentley.com/schemas/1.0/MicroStation/AddIn/KeyinTree.xsd">
+  <RootKeyinTable ID="root">
+    <Keyword SubString="myreport" CommandClass="MacroCommand" CommandWord="MYREPORT">
+      <SubKeyinTables>
+        <KeyinTable ID="myreport">
+          <Keyword SubString="levels" CommandClass="MacroCommand" CommandWord="LEVELS" />
+          <Keyword SubString="export" CommandClass="MacroCommand" CommandWord="EXPORT" />
+        </KeyinTable>
+      </SubKeyinTables>
+    </Keyword>
+  </RootKeyinTable>
+  <KeyinHandlers>
+    <KeyinHandler Keyin="MYREPORT LEVELS" Function="levels.report_levels" />
+    <KeyinHandler Keyin="MYREPORT EXPORT" Function="levels.export_csv" />
+  </KeyinHandlers>
+</KeyinTree>

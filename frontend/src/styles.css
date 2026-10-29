@@ -550,6 +550,38 @@ pre {
 .pill-abandoned { color: var(--muted); background: #1a221e; }
 .pill-runs { color: var(--green); background: transparent; border: 1px solid rgba(61, 255, 154, 0.55); }
 .pill-unknown { color: var(--muted); background: transparent; border: 1px solid var(--line); }
+.pill-mspy { color: #062015; background: var(--green); letter-spacing: 0.06em; }
+.rf-card.kind-keyin { border-color: rgba(240, 193, 74, 0.85); box-shadow: 0 0 16px rgba(240, 193, 74, 0.16); }
+.rf-card.kind-function { border-color: rgba(61, 255, 154, 0.75); }
+.keyins { display: grid; gap: 8px; margin: 4px 0 8px; }
+.keyins-toggle {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  background: transparent; border: 1px solid rgba(61, 255, 154, 0.28);
+  border-radius: 10px; padding: 6px 8px; color: var(--green); text-align: left;
+}
+.keyins-toggle em {
+  font-style: normal; color: #062015; background: var(--green);
+  border-radius: 999px; min-width: 1.3rem; text-align: center; font-size: 11px;
+}
+.keyins-toggle i { margin-left: auto; color: var(--muted); font-style: normal; font-size: 11px; }
+.keyin-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.keyin-list li { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; font-family: var(--mono); font-size: 12px; }
+.keyin-list code { color: #e7fff3; }
+.keyin-list span { color: var(--gold); }
+.keyin-list button, .keyin-list em { color: var(--green); font-style: normal; background: transparent; border: none; padding: 0; text-align: left; }
+.keyin-list em.missing { color: var(--danger); }
+.pitfalls { display: grid; gap: 6px; }
+.pitfall {
+  display: grid; gap: 3px; text-align: left; border-radius: 10px; padding: 8px;
+  background: transparent; border: 1px solid var(--line); color: inherit;
+}
+.pitfall strong { font-size: 12px; }
+.pitfall span { color: var(--muted); font-size: 12px; line-height: 1.35; }
+.pitfall em { font-style: normal; font-size: 11px; color: var(--green); }
+.pitfall-red { border-color: rgba(255, 141, 154, 0.7); }
+.pitfall-red strong { color: #ffd0d6; }
+.pitfall-amber { border-color: rgba(240, 193, 74, 0.75); }
+.pitfall-amber strong { color: #ffe7a3; }
 
 .tabbar { display: none; }
 

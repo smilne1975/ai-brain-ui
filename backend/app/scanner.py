@@ -150,6 +150,9 @@ def build_brain(root: Path, progress: ProgressFn | None = None) -> dict:
     for project in projects:
         pf = [f for f in files if f["project_id"] == project["id"]]
         _fill_project(project, pf, skills)
+    from backend.app.microstation import attach_microstation
+
+    attach_microstation(root, projects, files)
     architecture = {
         "corpus": _corpus_graph(projects, files, connections),
         "projects": {p["id"]: _project_graph(p, files, connections) for p in projects},
@@ -183,7 +186,7 @@ def build_brain(root: Path, progress: ProgressFn | None = None) -> dict:
 def signature(root: Path, progress: ProgressFn | None = None) -> str:
     """Cheap change token: relative path, size, mtime. Not file contents."""
     root = root.expanduser().resolve()
-    h = hashlib.sha256(b"brain-v3")
+    h = hashlib.sha256(b"brain-v4")
     if not root.exists():
         h.update(b"missing")
         return h.hexdigest()
@@ -494,6 +497,8 @@ def _kind(path: Path, env_class: str | None) -> str:
     if env_class:
         return "env"
     if path.name.lower() in {"requirements.txt", "requirements-dev.txt", "pipfile"}:
+        return "config"
+    if path.name.lower().endswith(".commands.xml"):
         return "config"
     ext = path.suffix.lower()
     if ext == ".py":
@@ -1035,6 +1040,11 @@ def _project_graph(project: dict, files: list[dict], connections: list[dict]) ->
                 linked = True
         if not linked:
             edges.append({"id": f"e:svcroot:{project['id']}:{conn['id']}", "source": root_id, "target": sid, "label": ""})
+    from backend.app.microstation import graph_extras
+
+    extra_nodes, extra_edges = graph_extras(project, chosen_ids)
+    nodes.extend(extra_nodes)
+    edges.extend(extra_edges)
     return {"nodes": nodes, "edges": _dedupe_edges(edges)}
 
 
@@ -1126,6 +1136,13 @@ def _suggestions(projects: list[dict], skills: list[dict], connections: list[dic
     live = [c for c in connections if c["status"] == "connected"]
     if live:
         out.append(f"Which folders talk to {live[0]['name']}?")
+    for project in projects:
+        report = project.get("microstation") or None
+        keyins = (report or {}).get("keyins") or []
+        if keyins and keyins[0].get("keyin"):
+            word = str(keyins[0]["keyin"]).split()[-1]
+            out.append(f"Which project has the {word} key-in?")
+            break
     out.append("What is still unfinished?")
     specific = [s for s in skills if s["id"] not in {"lab-notes", "copilot", "cli", "prompt-craft"}]
     if specific:
@@ -1136,7 +1153,7 @@ def _suggestions(projects: list[dict], skills: list[dict], connections: list[dic
     for item in out:
         if item not in deduped:
             deduped.append(item)
-    return deduped[:5]
+    return deduped[:6]
 
 
 def read_text_for_prompt(root: Path, file_rec: dict, limit: int = 1800) -> str:

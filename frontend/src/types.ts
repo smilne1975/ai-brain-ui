@@ -129,6 +129,37 @@ export type Timeline = {
 
 export type CardEntry = { path: string; how: string; kind: string }
 
+export type MicrostationKeyin = {
+  keyin: string
+  handler: string
+  module: string
+  function: string
+  xml: string
+  xml_id: string | null
+  found: boolean
+  rel: string
+  file_id: string | null
+  source: string
+}
+
+export type MicrostationPitfall = {
+  id: string
+  severity: "red" | "amber"
+  title: string
+  detail: string
+  prompt: string
+}
+
+export type MicrostationReport = {
+  project_id: string
+  name: string
+  keyins: MicrostationKeyin[]
+  commands: string[]
+  scripts: string[]
+  third_party: string[]
+  pitfalls: MicrostationPitfall[]
+}
+
 export type ProjectCard = {
   project_id: string
   name: string
@@ -147,6 +178,7 @@ export type ProjectCard = {
     empty: string[]
     missing_requirements: string[]
   }
+  microstation: MicrostationReport | null
 }
 
 export type CardBoard = {
@@ -208,6 +240,7 @@ export type Project = {
   skills: string[]
   services: string[]
   entries: string[]
+  microstation: MicrostationReport | null
   stats: {
     files: number
     python: number

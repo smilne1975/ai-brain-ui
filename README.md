@@ -103,6 +103,25 @@ Each card, and the folder detail on the map, also has **Pick up where I left off
 
 `GET /api/briefs` returns every brief. `GET /api/brief/{project}` returns one. `POST /api/brief/{project}/handoff` writes `BRAIN_HANDOFF.md`. With no model key the sentences are local. Set `BRAIN_BRIEF_LLM=1` as well as a provider key to let the model rewrite them. Chat text is not sent otherwise. `.env` values are never included.
 
+## MicroStation Python
+
+A folder is treated as MicroStation Python when a script imports an `MSPy*` module (`MSPyBentley`, `MSPyDgnPlatform`, `MSPyMstnPlatform`, and the rest) or the folder contains a `*.commands.xml` key-in table. No API key is required.
+
+The card shows an **MSPy** badge, the key-in strings, and the handler each one calls (`levels.py:report_levels`). A handler that is not defined in the scanned scripts is marked missing. Pitfall chips follow [Bentley's Python guide](https://developer.bentley.com/documentation/microstation-python-api/guides/developingpythonapps.md):
+
+- the same `.py` filename loaded in more than one MicroStation script (key-ins stop working)
+- a third-party import such as `pandas`, which needs `MS_PYTHON` pointed at a matching Python install, not a virtualenv
+- a key-in whose handler function was not found
+- a `commands.xml` with no matching `.py`
+
+Each chip copies a short Copilot prompt that describes the fix. On the Blueprint map, MicroStation folders get a node per key-in linked to the handler function. The ask bar answers “which project has the LEVELS key-in?” from those strings.
+
+`GET /api/microstation` lists every MicroStation project. `GET /api/microstation/{project}` returns one. The same object is on each project card.
+
+The demo folder `demo-projects/levels-report` registers `MYREPORT LEVELS`, imports pandas, and includes a second `levels.py` so the duplicate-filename warning is visible.
+
+![MicroStation key-ins on the levels-report card](docs/microstation-keyins.png)
+
 ## Copilot chat history
 
 Each project card, and the folder detail on the Blueprint map, has a **Why / Chat history** section. The Timeline lists the same sessions on the day they happened. Prompts that name a scanned file link to that file.
@@ -172,7 +191,7 @@ npx vsce package --allow-missing-repository -o ../releases/ai-brain-0.1.0.vsix
 
 The scanner walks each project, reads text files, and builds:
 
-- a skill tag from a small catalog (OpenAI, RAG, Slack, routing, lab notes, …)
+- a skill tag from a small catalog (OpenAI, RAG, Slack, routing, MicroStation Python, lab notes, …)
 - an architecture graph from entry points, local imports, and functions that branch (`classify`, `route`, `bucket`, …)
 - a service card when code or a key name mentions OpenAI, GitHub, Slack, Ollama, and the rest of the catalog
 - a plain-English folder summary from the README plus those facts

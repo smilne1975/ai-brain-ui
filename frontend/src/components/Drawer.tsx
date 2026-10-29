@@ -1,5 +1,6 @@
 import { saveHandoff } from "../api"
 import { BriefBlock, briefFor } from "./BriefBlock"
+import { Keyins } from "./Keyins"
 import { ChatHistory, sessionsFor } from "./ChatHistory"
 import type { Brain, BriefBoard, ChatIndex, Selection } from "../types"
 import { connectionById, fileById, projectName, skillById, statusLabel } from "../format"
@@ -65,6 +66,8 @@ function ProjectBody({
       <p className="eyebrow">Folder</p>
       <h2>{project.name}</h2>
       <p className="lede">{project.summary}</p>
+      {project.microstation ? <p className="quiet">MicroStation Python · MSPy</p> : null}
+      <Keyins report={project.microstation} onOpenFile={onOpenFile} />
       <p className="quiet">Summary from {project.summary_source === "model" ? "the model" : "the local index"}.</p>
       <div className="stat-row">
         <Stat n={project.stats.files} label="files" />

@@ -527,6 +527,11 @@ function searchHits(brain: Brain, query: string): Hit[] {
     if (matchesQuery(q, `${project.name} ${project.summary}`)) {
       hits.push({ kind: "project", id: project.id, label: project.name, meta: `${project.stats.files} files` })
     }
+    for (const keyin of project.microstation?.keyins ?? []) {
+      if (matchesQuery(q, `${keyin.keyin} ${keyin.function} ${keyin.rel}`)) {
+        hits.push({ kind: "project", id: project.id, label: keyin.keyin, meta: `${project.name} key-in` })
+      }
+    }
   }
   for (const skill of brain.skills) {
     if (matchesQuery(q, `${skill.name} ${skill.category} ${skill.blurb}`)) {

@@ -38,7 +38,7 @@ type Props = {
 
 const FILTERS: { id: string; label: string; kinds: Set<string> | null }[] = [
   { id: "all", label: "All", kinds: null },
-  { id: "scripts", label: "Scripts", kinds: new Set(["project", "entry", "script", "tool", "store"]) },
+  { id: "scripts", label: "Scripts", kinds: new Set(["project", "entry", "script", "tool", "store", "keyin", "function"]) },
   { id: "notes", label: "Notes", kinds: new Set(["project", "note", "model"]) },
   { id: "decisions", label: "Decisions", kinds: new Set(["project", "decision", "entry", "script"]) },
   { id: "services", label: "Services", kinds: new Set(["project", "service"]) },

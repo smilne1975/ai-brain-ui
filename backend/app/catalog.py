@@ -40,6 +40,7 @@ CATEGORY_ORDER = [
     "Data",
     "Interfaces",
     "Devtools",
+    "CAD",
     "Notes",
 ]
 
@@ -65,6 +66,23 @@ SKILLS: tuple[SkillDef, ...] = (
     SkillDef("sqlite", "SQLite", "Data", "sqlite3 in a script or a note about trying it.", ("sqlite3", "sqlite")),
     SkillDef("cli", "CLI scripts", "Interfaces", "Scripts with argparse or a __main__ guard.", ("argparse", "__main__")),
     SkillDef("copilot", "Copilot workflow", "Devtools", "VS Code Copilot notes, comments, or editor settings.", ("copilot", ".vscode")),
+    SkillDef(
+        "microstation-python",
+        "MicroStation Python",
+        "CAD",
+        "MicroStation Python scripts, MSPy imports, and commands.xml key-in tables.",
+        (
+            "mspybentley",
+            "mspybentleygeom",
+            "mspydgnplatform",
+            "mspymstnplatform",
+            "mspydgnview",
+            "mspyecobjects",
+            ".commands.xml",
+            "pythonkeyinmanager",
+            "loadcommandtablefromxml",
+        ),
+    ),
     SkillDef("lab-notes", "Lab notes", "Notes", "Markdown that is not a prompt file.", special="lab-notes"),
 )
 

@@ -241,12 +241,16 @@ def test_demo_timeline_and_cards_api(tmp_path: Path, monkeypatch):
             "prompt-vault",
             "local-vision-lab",
             "agent-scratchpad",
+            "levels-report",
         }
         assert by_id["inbox-triage"]["run"] == "runs"
         assert "triage.py" in by_id["inbox-triage"]["entry"]["how"]
         assert by_id["agent-scratchpad"]["run"] == "runs"
         assert "agent.py" in by_id["agent-scratchpad"]["entry"]["how"]
         assert "digest.py" in by_id["github-pr-digest"]["entry"]["how"]
+        levels = by_id["levels-report"]["microstation"]
+        assert levels["keyins"]
+        assert any(item["keyin"] == "MYREPORT LEVELS" for item in levels["keyins"])
         assert "query.py" in by_id["meeting-notes-rag"]["entry"]["how"]
         assert "label_folder.py" in by_id["local-vision-lab"]["entry"]["how"]
         assert by_id["prompt-vault"]["run"] == "unknown"

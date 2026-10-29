@@ -70,9 +70,10 @@ def test_demo_corpus_map():
         "prompt-vault",
         "local-vision-lab",
         "agent-scratchpad",
+        "levels-report",
     }
     skill_ids = {skill["id"] for skill in brain["skills"]}
-    for required in ("openai-api", "rag", "chunking", "embeddings", "routing", "slack", "github", "vision", "prompt-craft", "tool-use", "copilot"):
+    for required in ("openai-api", "rag", "chunking", "embeddings", "routing", "slack", "github", "vision", "prompt-craft", "tool-use", "copilot", "microstation-python"):
         assert required in skill_ids
 
     status = {item["id"]: item["status"] for item in brain["connections"]}
@@ -218,6 +219,8 @@ def test_startup_returns_before_the_scan_finishes(tmp_path: Path, monkeypatch):
             assert client.get("/api/briefs").status_code == 503
             assert client.get("/api/brief/alpha").status_code == 503
             assert client.get("/api/digest").status_code == 503
+            assert client.get("/api/microstation").status_code == 503
+            assert client.get("/api/microstation/alpha").status_code == 503
         finally:
             gate.set()
         ready = _wait_ready(client)
@@ -254,4 +257,4 @@ def test_api_roundtrip(tmp_path: Path, monkeypatch):
         assert rescanned.json()["phase"] in {"scanning", "ready"}
         assert "demo-projects" in rescanned.json()["root"]
         again = _wait_ready(client)
-        assert again["projects"] == 6
+        assert again["projects"] == 7

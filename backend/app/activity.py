@@ -341,6 +341,7 @@ def _card(root: Path, project: dict, files: list[dict], now: datetime) -> dict:
             "empty": [rec["rel"] for rec in files if _is_empty(rec)][:8],
             "missing_requirements": _missing_requirements(root, project, files),
         },
+        "microstation": project.get("microstation"),
     }
 
 

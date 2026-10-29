@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { BriefBlock, briefFor } from "../components/BriefBlock"
 import { ChatHistory, sessionsFor } from "../components/ChatHistory"
+import { Keyins } from "../components/Keyins"
 import type { Brain, BriefBoard, CardBoard, ChatIndex, ProjectCard } from "../types"
 import { formatWhen, matchesQuery, projectName } from "../format"
 
@@ -42,7 +43,8 @@ export function CardsView({ brain, data, chats, briefs, loading, error, query, f
       .join(" ")
     const brief = briefFor(briefs?.briefs, card.project_id)
     const briefText = brief ? `${brief.last_doing} ${brief.next_step} ${brief.decisions.join(" ")}` : ""
-    return matchesQuery(query, `${card.name} ${card.blurb} ${card.entry?.how ?? ""} ${langs} ${unfinished} ${chatText} ${briefText}`)
+    const keyinText = (card.microstation?.keyins ?? []).map((item) => `${item.keyin} ${item.rel} ${item.function}`).join(" ")
+    return matchesQuery(query, `${card.name} ${card.blurb} ${card.entry?.how ?? ""} ${langs} ${unfinished} ${chatText} ${briefText} ${keyinText}`)
   })
 
   return (
@@ -82,10 +84,12 @@ export function CardsView({ brain, data, chats, briefs, loading, error, query, f
               </button>
               <div className="status-pills">
                 <em className={`pill pill-${card.activity}`}>{labelFor(card.activity)}</em>
+                {card.microstation ? <em className="pill pill-mspy">MSPy</em> : null}
                 <em className={`pill pill-${card.run}`}>{card.run === "runs" ? "Runs" : "Unknown"}</em>
               </div>
             </div>
             <p className="status-blurb">{card.blurb}</p>
+            <Keyins report={card.microstation} onOpenFile={onOpenFile} />
             {briefFor(briefs?.briefs, card.project_id) && (
               <BriefBlock brief={briefFor(briefs?.briefs, card.project_id)!} compact onOpenFile={onOpenFile} />
             )}
