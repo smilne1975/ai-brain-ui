@@ -109,6 +109,7 @@ class ConfigState:
     done: set[Path] = field(default_factory=set)
     stack: list[Path] = field(default_factory=list)
     files: list[str] = field(default_factory=list)
+    includes: list[dict] = field(default_factory=list)
     current_rel: str = ""
     current_line: int = 0
     stop_file: bool = False
@@ -298,21 +299,25 @@ def process_file(self: ConfigState, path: Path) -> None:
     if resolved in self.stack:
         self.add_fault(_include_fault("unresolved", self.current_rel, self.current_line, resolved.name, "that file includes itself"))
         return
-    if resolved in self.done:
-        return
-    if len(self.done) >= MAX_INCLUDES:
+    if len(self.done) >= MAX_INCLUDES and resolved not in self.done:
         self.add_fault(_include_fault("unresolved", self.current_rel, self.current_line, resolved.name, "the include limit was reached"))
         return
     if not _under(resolved, self.scan_root) or not resolved.is_file():
         return
+    rel = _display(resolved, self.project_root, self.scan_root)
+    parent_rel = self.current_rel
+    parent_line = self.current_line
+    if parent_rel and parent_rel != rel:
+        self.includes.append({"source": parent_rel, "target": rel, "line": parent_line})
     if resolved.suffix.lower() not in _CONFIG_EXT:
         self.add_fault(
-            _include_fault("unresolved", self.current_rel, self.current_line, _display(resolved, self.project_root, self.scan_root), "only .cfg, .ucf, and .pcf files are read")
+            _include_fault("unresolved", parent_rel or rel, parent_line, rel, "only .cfg, .ucf, and .pcf files are read")
         )
+        return
+    if resolved in self.done:
         return
     self.done.add(resolved)
     self.stack.append(resolved)
-    rel = _display(resolved, self.project_root, self.scan_root)
     if rel not in self.files:
         self.files.append(rel)
     previous_rel = self.current_rel
@@ -556,6 +561,21 @@ def _condition(self: ConfigState, rest: str) -> bool:
     return _truthy(value)
 
 
+def _assignments(state: ConfigState, key: str) -> list[dict]:
+    rows = []
+    for level, slot in sorted((state.slots.get(key) or {}).items(), key=lambda item: _RANK.get(item[0], 0)):
+        rows.append(
+            {
+                "level": level,
+                "value": state.expand_all(slot.raw) if slot.raw else "",
+                "file": slot.file,
+                "line": slot.line,
+                "operator": slot.operator,
+            }
+        )
+    return rows
+
+
 def snapshot(self: ConfigState) -> dict:
     variables = []
     keys = set(self.slots) | set(self.locks)
@@ -576,12 +596,18 @@ def snapshot(self: ConfigState) -> dict:
                 "lock_line": lock[1] if lock else None,
                 "operator": slot.operator if slot else ("lock" if lock else ""),
                 "references": [],
+                "assignments": _assignments(self, key),
             }
         )
     variables.sort(key=lambda item: item["name"])
     _folder_faults(self, variables)
     self.faults.sort(key=lambda item: (str(item.get("file") or ""), item.get("line") or 0, item.get("id") or ""))
-    return {"variables": variables, "faults": list(self.faults), "files": list(self.files)}
+    return {
+        "variables": variables,
+        "faults": list(self.faults),
+        "files": list(self.files),
+        "includes": list(self.includes),
+    }
 
 
 def _folder_faults(state: ConfigState, variables: list[dict]) -> None:
@@ -657,7 +683,342 @@ def _project_config(root: Path, project: dict, file_recs: list[dict]) -> dict | 
             }
         )
     units.sort(key=lambda item: ({"workspace": 0, "workset": 1, "pcf": 2, "config": 3, "user": 4}.get(item["kind"], 9), item["name"]))
-    return {"project_id": project["id"], "name": project.get("name") or project["id"], "units": units}
+    graph = build_config_graph(project["id"], project.get("name") or project["id"], units, id_by_rel)
+    return {
+        "project_id": project["id"],
+        "name": project.get("name") or project["id"],
+        "units": units,
+        "graph": graph,
+    }
+
+
+_BADGE = {
+    "missing-slash": "no /",
+    "hard-coded-user": "C:/Users",
+    "locked-override": "locked",
+    "missing-include": "include",
+    "unresolved-include": "include",
+    "pcf-upgrade": ".pcf",
+}
+
+
+def _graph_slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", (text or "").casefold()).strip("-") or "item"
+
+
+def _fault_mark(faults: list[dict]) -> tuple[str, str]:
+    if any(item.get("severity") == "red" for item in faults):
+        severity = "red"
+    elif faults:
+        severity = "amber"
+    else:
+        return "", ""
+    ranked = sorted(faults, key=lambda item: (0 if item.get("severity") == "red" else 1, item.get("id") or ""))
+    return severity, _BADGE.get(ranked[0].get("id") or "", "fault")
+
+
+def _node(node_id: str, label: str, sub: str, kind: str, project_id: str, file_id: str | None, faults: list[dict]) -> dict:
+    severity, badge = _fault_mark(faults)
+    return {
+        "id": node_id,
+        "label": label,
+        "sub": sub[:160],
+        "kind": kind,
+        "project_id": project_id,
+        "file_id": file_id,
+        "service_id": None,
+        "severity": severity,
+        "badge": badge,
+    }
+
+
+def _edge(source: str, target: str, label: str) -> dict:
+    return {"id": f"e:{source}:{target}:{label or 'link'}", "source": source, "target": target, "label": label}
+
+
+def build_config_graph(project_id: str, project_name: str, units: list[dict], id_by_rel: dict[str, str | None]) -> dict:
+    """Node graph for one project's WorkSpaces, WorkSets, files, and variables."""
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    seen: set[str] = set()
+
+    def add(node: dict) -> None:
+        if node["id"] in seen:
+            return
+        seen.add(node["id"])
+        nodes.append(node)
+
+    project_node = f"cfg:{project_id}:project"
+    add(_node(project_node, project_name, "project folder", "project", project_id, None, []))
+    file_of: dict[str, str] = {}
+    for unit in units:
+        for rel in unit.get("files") or []:
+            if not rel or rel in file_of:
+                continue
+            faults = [item for item in unit.get("faults") or [] if item.get("file") == rel]
+            node_id = f"cfg:{project_id}:file:{_graph_slug(rel)}"
+            file_of[rel] = node_id
+            add(_node(node_id, Path(rel).name, rel, "cfg", project_id, id_by_rel.get(rel), faults))
+    for unit in units:
+        for include in unit.get("includes") or []:
+            source = file_of.get(include.get("source") or "")
+            target = file_of.get(include.get("target") or "")
+            if source and target:
+                edges.append(_edge(source, target, "includes"))
+    unit_of: dict[tuple[str, str], str] = {}
+    for unit in units:
+        kind = unit.get("kind") or "config"
+        node_id = f"cfg:{project_id}:{kind}:{_graph_slug(unit.get('name') or '')}"
+        unit_of[(kind, (unit.get("name") or "").casefold())] = node_id
+        label = unit.get("name") or kind
+        sub = {"workspace": "WorkSpace", "workset": "WorkSet", "pcf": "Legacy .pcf", "user": "User"}.get(kind, "Config")
+        if unit.get("workspace") and kind == "workset":
+            sub = f"WorkSet · {unit['workspace']}"
+        add(_node(node_id, label, sub, kind if kind != "config" else "cfg", project_id, unit.get("file_id"), unit.get("faults") or []))
+        if kind in {"workset", "pcf", "config", "user"}:
+            edges.append(_edge(node_id, project_node, "in"))
+        entry = file_of.get(unit.get("file") or "")
+        if entry:
+            edges.append(_edge(node_id, entry, "file"))
+    for unit in units:
+        if unit.get("kind") != "workset":
+            continue
+        parent = unit_of.get(("workspace", (unit.get("workspace") or "").casefold()))
+        child = unit_of.get(("workset", (unit.get("name") or "").casefold()))
+        if parent and child:
+            edges.append(_edge(parent, child, "workset"))
+    for unit in units:
+        unit_id = unit_of.get((unit.get("kind") or "config", (unit.get("name") or "").casefold()))
+        for var in unit.get("variables") or []:
+            faults = [item for item in unit.get("faults") or [] if item.get("variable") == var.get("name")]
+            if not var.get("value") and not var.get("locked") and not faults:
+                continue
+            node_id = f"cfg:{project_id}:{_graph_slug(unit.get('name') or '')}:var:{var.get('name')}"
+            level = var.get("level") or "unset"
+            value = var.get("value") or "not set"
+            add(_node(node_id, var.get("name") or "variable", f"{level} · {value}", "variable", project_id, var.get("file_id"), faults))
+            if unit_id:
+                edges.append(_edge(unit_id, node_id, "sets"))
+            defining = file_of.get(var.get("file") or "")
+            if defining:
+                edges.append(_edge(node_id, defining, "defined in"))
+            for older in var.get("assignments") or []:
+                if not older.get("file") or older.get("file") == var.get("file"):
+                    continue
+                winner = file_of.get(var.get("file") or "")
+                previous = file_of.get(older.get("file") or "")
+                if winner and previous:
+                    edges.append(_edge(winner, previous, "overrides"))
+            for fault in faults:
+                if fault.get("id") != "locked-override":
+                    continue
+                other = fault.get("file") or ""
+                if not other or other == var.get("file"):
+                    continue
+                source = file_of.get(other)
+                if source is None:
+                    source = f"cfg:{project_id}:ref:{_graph_slug(other)}"
+                    add(_node(source, Path(other).name, other, "script", project_id, fault.get("file_id"), [fault]))
+                if defining:
+                    edges.append(_edge(source, defining, "blocked"))
+                elif node_id:
+                    edges.append(_edge(source, node_id, "blocked"))
+    return {"nodes": nodes, "edges": _dedupe_graph(edges)}
+
+
+def brain_graph_extras(project: dict, chosen_ids: set[str]) -> tuple[list[dict], list[dict]]:
+    """WorkSet, WorkSpace, and variable nodes for the project blueprint."""
+    report = project.get("microstation_config") or None
+    if not report:
+        return [], []
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    root_id = f"n:{project['id']}:root"
+    seen: set[str] = set()
+
+    def add(node: dict) -> None:
+        if node["id"] in seen:
+            return
+        seen.add(node["id"])
+        nodes.append(node)
+
+    file_node = {rel: f"n:{file_id}" for rel, file_id in _rel_ids(report).items() if file_id and file_id in chosen_ids}
+    for unit in report.get("units") or []:
+        if unit.get("kind") not in {"workspace", "workset", "pcf"}:
+            continue
+        node_id = f"n:{project['id']}:cfg:{unit['kind']}:{_graph_slug(unit.get('name') or '')}"
+        sub = {"workspace": "WorkSpace", "workset": "WorkSet", "pcf": "Legacy .pcf"}.get(unit["kind"], "Config")
+        faults = unit.get("faults") or []
+        if faults:
+            sub = f"{sub} · {len(faults)} fault{'s' if len(faults) != 1 else ''}"
+        add(_node(node_id, unit.get("name") or sub, sub, unit["kind"], project["id"], unit.get("file_id"), faults))
+        edges.append(_edge(root_id, node_id, unit["kind"]))
+        if unit.get("kind") == "workset":
+            parent = f"n:{project['id']}:cfg:workspace:{_graph_slug(unit.get('workspace') or '')}"
+            if parent in seen:
+                edges.append(_edge(parent, node_id, "workset"))
+        entry = file_node.get(unit.get("file") or "")
+        if entry:
+            edges.append(_edge(node_id, entry, "file"))
+        linked = 0
+        for var in unit.get("variables") or []:
+            if linked >= 7:
+                break
+            if var.get("name") not in KEY_VARS:
+                continue
+            if not var.get("value") and not var.get("locked"):
+                continue
+            var_id = f"{node_id}:var:{var['name']}"
+            faults = [item for item in unit.get("faults") or [] if item.get("variable") == var.get("name")]
+            add(
+                _node(
+                    var_id,
+                    var["name"],
+                    f"{var.get('level') or 'unset'} · {var.get('value') or 'not set'}"[:160],
+                    "variable",
+                    project["id"],
+                    var.get("file_id"),
+                    faults,
+                )
+            )
+            edges.append(_edge(node_id, var_id, "sets"))
+            defining = file_node.get(var.get("file") or "")
+            if defining:
+                edges.append(_edge(var_id, defining, "defined in"))
+            for ref in (var.get("references") or [])[:4]:
+                file_id = ref.get("file_id")
+                if file_id and file_id in chosen_ids:
+                    edges.append(_edge(var_id, f"n:{file_id}", ref.get("how") or "reads"))
+            linked += 1
+    return nodes, edges
+
+
+def corpus_config_links(projects: list[dict]) -> tuple[list[dict], list[dict]]:
+    """WorkSet nodes on the corpus graph, plus path edges to other project folders."""
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    seen: set[str] = set()
+    for project in projects:
+        report = project.get("microstation_config") or None
+        if not report:
+            continue
+        for unit in report.get("units") or []:
+            if unit.get("kind") not in {"workspace", "workset", "pcf"}:
+                continue
+            node_id = f"c:{project['id']}:cfg:{unit['kind']}:{_graph_slug(unit.get('name') or '')}"
+            if node_id in seen:
+                continue
+            seen.add(node_id)
+            faults = unit.get("faults") or []
+            sub = {"workspace": "WorkSpace", "workset": "WorkSet", "pcf": "Legacy .pcf"}.get(unit["kind"], "Config")
+            nodes.append(_node(node_id, unit.get("name") or sub, sub, unit["kind"], project["id"], unit.get("file_id"), faults))
+            edges.append(_edge(f"c:{project['id']}", node_id, unit["kind"]))
+            for other in projects:
+                if other["id"] == project["id"]:
+                    continue
+                if _unit_matches_project(unit, other):
+                    edges.append(_edge(node_id, f"c:{other['id']}", "path"))
+                    break
+    return nodes, edges
+
+
+def config_search_rows(projects: list[dict]) -> list[dict]:
+    """Flat rows stored with the brain so config values can be searched from the cache."""
+    rows = []
+    for project in projects:
+        report = project.get("microstation_config") or None
+        if not report:
+            continue
+        for unit in report.get("units") or []:
+            for var in unit.get("variables") or []:
+                if not var.get("value") and not var.get("locked"):
+                    continue
+                text = " ".join(
+                    [
+                        unit.get("kind") or "",
+                        unit.get("name") or "",
+                        unit.get("workspace") or "",
+                        var.get("name") or "",
+                        var.get("level") or "",
+                        var.get("value") or "",
+                        var.get("file") or "",
+                    ]
+                )
+                rows.append(
+                    {
+                        "project_id": project["id"],
+                        "project": project.get("name") or project["id"],
+                        "file": var.get("file") or unit.get("file") or "",
+                        "file_id": var.get("file_id") or unit.get("file_id"),
+                        "text": text,
+                        "snippet": (
+                            f"{unit.get('kind') or 'config'} {unit.get('name') or ''}: "
+                            f"{var.get('name')} = {var.get('value') or 'unset'} ({var.get('level') or 'unset'})"
+                        )[:400],
+                    }
+                )
+    return rows
+
+
+def _rel_ids(report: dict) -> dict[str, str | None]:
+    found: dict[str, str | None] = {}
+    for unit in report.get("units") or []:
+        if unit.get("file"):
+            found.setdefault(unit["file"], unit.get("file_id"))
+        for var in unit.get("variables") or []:
+            if var.get("file"):
+                found.setdefault(var["file"], var.get("file_id"))
+        for ref in _all_refs(unit):
+            if ref.get("rel"):
+                found.setdefault(ref["rel"], ref.get("file_id"))
+    return found
+
+
+def _all_refs(unit: dict) -> list[dict]:
+    refs = []
+    for var in unit.get("variables") or []:
+        refs.extend(var.get("references") or [])
+    return refs
+
+
+def _unit_matches_project(unit: dict, project: dict) -> bool:
+    for name in ("_USTN_WORKSETROOT", "_USTN_WORKSPACEROOT", "MS_DEF"):
+        var = next((item for item in unit.get("variables") or [] if item.get("name") == name), None)
+        if var and _path_matches(var.get("value") or "", project):
+            return True
+    return False
+
+
+def _path_matches(value: str, project: dict) -> bool:
+    norm = _norm_path(value)
+    if not norm or "$" in norm or "/" not in norm:
+        return False
+    rel = _norm_path(project.get("rel") or "")
+    name = (project.get("name") or "").casefold()
+    pid = (project.get("id") or "").casefold()
+    if rel and rel not in {"", "."} and (norm == rel or norm.endswith("/" + rel)):
+        return True
+    tail = norm.split("/")[-1]
+    return bool(tail) and tail in {name, pid}
+
+
+def _norm_path(value: str) -> str:
+    text = (value or "").replace("\\", "/").strip()
+    while text.endswith("/"):
+        text = text[:-1]
+    return text.casefold()
+
+
+def _dedupe_graph(edges: list[dict]) -> list[dict]:
+    seen = set()
+    out = []
+    for edge in edges:
+        key = (edge["source"], edge["target"], edge.get("label") or "")
+        if key in seen or edge["source"] == edge["target"]:
+            continue
+        seen.add(key)
+        out.append(edge)
+    return out
 
 
 def _plans(sources: list[Source]) -> tuple[list[dict], list[Source]]:
@@ -773,6 +1134,7 @@ def _present(project: dict, plan: dict, evaluated: dict, id_by_rel: dict[str, st
         "files": evaluated["files"],
         "variables": variables,
         "faults": faults,
+        "includes": evaluated.get("includes") or [],
         "_all": by_name,
     }
 

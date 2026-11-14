@@ -201,6 +201,7 @@ export type ConfigProject = {
   project_id: string
   name: string
   units: ConfigUnit[]
+  graph?: Graph
 }
 
 export type ConfigBoard = {
@@ -342,6 +343,8 @@ export type GraphNode = {
   project_id: string | null
   file_id: string | null
   service_id: string | null
+  severity?: "red" | "amber" | ""
+  badge?: string
 }
 
 export type GraphEdge = { id: string; source: string; target: string; label: string }

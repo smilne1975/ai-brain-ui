@@ -7,7 +7,9 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from backend.app.mcp_tools import run_tool, tool_specs
+from backend.app.activity import build_timeline
+from backend.app.brief import build_brief
+from backend.app.mcp_tools import run_tool, search_projects, tool_specs
 from backend.app.microstation_config import evaluate_config
 from backend.app.scanner import build_brain
 from backend.app import store
@@ -402,3 +404,119 @@ def test_mcp_config_answer_stays_capped(tmp_path: Path, monkeypatch):
     assert called["truncated"] is True
     assert called["text"].endswith("[truncated to 20 KB]")
     assert len(called["text"].encode("utf-8")) <= 20_000
+
+
+def test_config_graph_links_into_the_brain(tmp_path: Path):
+    job = tmp_path / "bridge-job"
+    library = tmp_path / "library"
+    ws = job / "Configuration" / "WorkSpaces" / "Civil"
+    span = ws / "WorkSets" / "Span"
+    (ws / "Standards").mkdir(parents=True)
+    span.mkdir(parents=True)
+    (job / "Configuration" / "Users").mkdir(parents=True)
+    library.mkdir()
+    (library / "readme.md").write_text("# Shared cell library\n", encoding="utf-8")
+    (ws / "Civil.cfg").write_text(
+        "\n".join(
+            [
+                "%level WorkSpace",
+                "_USTN_WORKSPACENAME = Civil",
+                "_USTN_WORKSPACEROOT = Configuration/WorkSpaces/Civil/",
+                "%include Standards/site.cfg",
+                "MS_RFDIR = $(_USTN_WORKSPACEROOT)refs/",
+                "%lock MS_RFDIR",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (ws / "Standards" / "site.cfg").write_text("%level Organization\nMS_CELL : $(_USTN_WORKSETROOT)cell/\n", encoding="utf-8")
+    (span / "Span.cfg").write_text(
+        "\n".join(
+            [
+                "%level WorkSet",
+                "_USTN_WORKSETNAME = Span",
+                "_USTN_WORKSETROOT = Configuration/WorkSpaces/Civil/WorkSets/Span/",
+                "MS_DEF = $(_USTN_WORKSETROOT)dgn/",
+                "MS_SEEDFILES = $(_USTN_WORKSETROOT)seed/",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (job / "Configuration" / "Users" / "stu.ucf").write_text(
+        "\n".join(
+            [
+                "%level User",
+                "MS_DEF = shared/library",
+                "MS_RFDIR = C:/Users/Stu/refs",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (job / "span_tool.py").write_text(
+        "import os\nfrom MSPyBentley import ConfigurationManager\n\ndef ping():\n    return os.environ.get(\"MS_DEF\")\n",
+        encoding="utf-8",
+    )
+    before = {path: path.read_bytes() for path in job.rglob("*.cfg")}
+    brain = build_brain(tmp_path)
+    assert {path: path.read_bytes() for path in before} == before
+    report = next(item["microstation_config"] for item in brain["projects"] if item["id"] == "bridge-job")
+    graph = report["graph"]
+    kinds = {node["kind"] for node in graph["nodes"]}
+    assert {"project", "workspace", "workset", "cfg", "variable"} <= kinds
+    labels = {edge["label"] for edge in graph["edges"]}
+    assert {"includes", "workset", "in", "defined in", "overrides"} <= labels
+    include = next(edge for edge in graph["edges"] if edge["label"] == "includes")
+    by_id = {node["id"]: node for node in graph["nodes"]}
+    assert by_id[include["source"]]["label"] == "Civil.cfg"
+    assert by_id[include["target"]]["label"] == "site.cfg"
+    ms_def = next(node for node in graph["nodes"] if node["label"] == "MS_DEF" and "span" in node["id"])
+    assert ms_def["badge"] == "no /"
+    locked = next(node for node in graph["nodes"] if node["label"] == "MS_RFDIR" and "span" in node["id"])
+    assert locked["badge"] == "locked"
+
+    project_graph = brain["architecture"]["projects"]["bridge-job"]
+    assert any(node["kind"] == "workset" and node["label"] == "Span" for node in project_graph["nodes"])
+    assert any(node["kind"] == "variable" and node["label"] == "MS_DEF" for node in project_graph["nodes"])
+    root = next(node["id"] for node in project_graph["nodes"] if node["kind"] == "project")
+    span_id = next(node["id"] for node in project_graph["nodes"] if node["kind"] == "workset" and node["label"] == "Span")
+    assert any(edge["source"] == root and edge["target"] == span_id for edge in project_graph["edges"])
+    script = next(node for node in project_graph["nodes"] if node["label"] == "span_tool.py")
+    assert any(edge["target"] == script["id"] and edge["label"] in {"reads", "assigns"} for edge in project_graph["edges"])
+
+    corpus = brain["architecture"]["corpus"]
+    library_id = "c:library"
+    assert any(edge["target"] == library_id and edge["label"] == "path" for edge in corpus["edges"])
+    assert any(node["kind"] == "workset" and node["label"] == "Span" for node in corpus["nodes"])
+
+    found = search_projects(brain, "MS_RFDIR Civil refs", 8)
+    assert any("Configuration/WorkSpaces/Civil/refs/" in hit["snippet"] for hit in found["hits"])
+    assert SENTINEL not in json.dumps(found)
+
+    brief = build_brief(tmp_path, brain, "bridge-job", {"enabled": False, "sessions": []})
+    assert brief["config"]["units"]
+    assert any(unit["name"] == "Span" for unit in brief["config"]["units"])
+    assert "MicroStation config" in brief["copy_text"]
+    assert "Span" in brief["copy_text"]
+
+    timeline = build_timeline(tmp_path, brain, 7)
+    notes = [
+        item.get("note") or ""
+        for week in timeline["weeks"]
+        for day in week["days"]
+        for proj in day["projects"]
+        if proj["project_id"] == "bridge-job"
+        for item in proj["files"]
+    ]
+    assert any("WorkSet Span" in note for note in notes)
+
+    called = run_tool(
+        "get_microstation_config",
+        {"project": "bridge-job", "workset": "Span"},
+        {"root": tmp_path, "brain": brain, "scanning": False, "source": "memory", "updated_at": None},
+    )
+    assert called["bytes"] <= 20_000
+    assert "graph" in called["text"]
+    assert "includes" in called["text"]

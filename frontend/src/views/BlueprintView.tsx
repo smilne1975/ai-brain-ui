@@ -1,32 +1,7 @@
-import {
-  Background,
-  Controls,
-  Handle,
-  MiniMap,
-  Position,
-  ReactFlow,
-  type Edge,
-  type Node,
-  type NodeProps,
-} from "@xyflow/react"
-import * as dagre from "dagre"
 import { useMemo, useState } from "react"
-import "@xyflow/react/dist/style.css"
 import { ask } from "../api"
-import type { AskResponse, Brain, GraphEdge, GraphNode, Selection } from "../types"
-import { matchesQuery } from "../format"
-
-type CardData = {
-  label: string
-  sub: string
-  kind: string
-  dim: boolean
-  fileId: string | null
-  projectId: string | null
-  serviceId: string | null
-}
-
-type FlowNode = Node<CardData, "card" | "diamond">
+import { FlowGraph } from "../components/FlowGraph"
+import type { AskResponse, Brain, Selection } from "../types"
 
 type Props = {
   brain: Brain
@@ -42,6 +17,7 @@ const FILTERS: { id: string; label: string; kinds: Set<string> | null }[] = [
   { id: "notes", label: "Notes", kinds: new Set(["project", "note", "model"]) },
   { id: "decisions", label: "Decisions", kinds: new Set(["project", "decision", "entry", "script"]) },
   { id: "services", label: "Services", kinds: new Set(["project", "service"]) },
+  { id: "config", label: "Config", kinds: new Set(["project", "workspace", "workset", "pcf", "variable", "cfg", "script"]) },
 ]
 
 export function BlueprintView({ brain, query, focus, onFocus, onSelect }: Props) {
@@ -58,16 +34,8 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect }: Props)
     const sourceNodes = (graph?.nodes ?? []).filter((node) => !activeFilter.kinds || activeFilter.kinds.has(node.kind))
     const ids = new Set(sourceNodes.map((node) => node.id))
     const sourceEdges = (graph?.edges ?? []).filter((edge) => ids.has(edge.source) && ids.has(edge.target))
-    return layout(sourceNodes, sourceEdges)
+    return { nodes: sourceNodes, edges: sourceEdges }
   }, [graph, activeFilter])
-
-  const nodes = flow.nodes.map((node) => ({
-    ...node,
-    data: {
-      ...node.data,
-      dim: !matchesQuery(query, `${node.data.label} ${node.data.sub} ${node.data.kind}`),
-    },
-  }))
 
   const suggestions = focus
     ? [
@@ -118,29 +86,13 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect }: Props)
           ))}
         </div>
         <div className="flow-canvas">
-        <ReactFlow
-          key={`${focus ?? "corpus"}-${filter}`}
-          nodes={nodes}
-          edges={flow.edges}
-          nodeTypes={nodeTypes}
-          fitView
-          fitViewOptions={{ padding: 0.18 }}
-          minZoom={0.2}
-          maxZoom={1.7}
-          nodesConnectable={false}
-          proOptions={{ hideAttribution: false }}
-          onNodeClick={(_, node) => openNode(node.data, focus, onFocus, onSelect)}
-        >
-          <Background color="rgba(61,255,154,0.16)" gap={22} size={1} />
-          <Controls showInteractive={false} />
-          <MiniMap
-            pannable
-            zoomable
-            maskColor="rgba(0,0,0,0.72)"
-            nodeColor={(node) => (node.type === "diamond" ? "#f0c14a" : "#1bd67a")}
-            style={{ background: "#0c100e" }}
+          <FlowGraph
+            key={`${focus ?? "corpus"}-${filter}`}
+            nodes={flow.nodes}
+            edges={flow.edges}
+            query={query}
+            onNodeClick={(node) => openNode(node, focus, onFocus, onSelect)}
           />
-        </ReactFlow>
         </div>
       </div>
       <h1 className="stage-title">blueprint</h1>
@@ -189,101 +141,24 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect }: Props)
 }
 
 function openNode(
-  data: CardData,
+  node: { kind: string; project_id: string | null; file_id: string | null; service_id: string | null },
   focus: string | null,
   onFocus: (id: string | null) => void,
   onSelect: (selection: Selection) => void,
 ) {
-  if (data.kind === "project" && data.projectId) {
-    onSelect({ kind: "project", id: data.projectId })
-    if (focus !== data.projectId) onFocus(data.projectId)
+  if (node.file_id) {
+    onSelect({ kind: "file", id: node.file_id })
     return
   }
-  if (data.fileId) {
-    onSelect({ kind: "file", id: data.fileId })
+  if (node.kind === "project" && node.project_id) {
+    onSelect({ kind: "project", id: node.project_id })
+    if (focus !== node.project_id) onFocus(node.project_id)
     return
   }
-  if (data.serviceId) onSelect({ kind: "connection", id: data.serviceId })
-}
-
-const nodeTypes = {
-  card: CardNode,
-  diamond: DiamondNode,
-}
-
-function CardNode({ data }: NodeProps<Node<CardData, "card">>) {
-  return (
-    <div className={`rf-card kind-${data.kind}${data.dim ? " dim" : ""}`}>
-      <Handle type="target" position={Position.Top} />
-      <div className="rf-kicker">{data.kind}</div>
-      <div className="rf-label">{data.label}</div>
-      <div className="rf-sub">{data.sub}</div>
-      <Handle type="source" position={Position.Bottom} />
-    </div>
-  )
-}
-
-function DiamondNode({ data }: NodeProps<Node<CardData, "diamond">>) {
-  return (
-    <div className={`rf-diamond${data.dim ? " dim" : ""}`}>
-      <Handle type="target" position={Position.Top} />
-      <div className="rf-diamond-shape">
-        <span>{data.label}</span>
-      </div>
-      <Handle type="source" position={Position.Bottom} />
-    </div>
-  )
-}
-
-function layout(nodes: GraphNode[], edges: GraphEdge[]): {
-  nodes: FlowNode[]
-  edges: Edge[]
-} {
-  const g = new dagre.graphlib.Graph()
-  g.setDefaultEdgeLabel(() => ({}))
-  g.setGraph({ rankdir: "TB", nodesep: 34, ranksep: 62, marginx: 16, marginy: 28 })
-  for (const node of nodes) {
-    const diamond = node.kind === "decision"
-    g.setNode(node.id, { width: diamond ? 150 : 220, height: diamond ? 118 : 84 })
+  if ((node.kind === "workset" || node.kind === "workspace" || node.kind === "pcf") && node.project_id) {
+    onSelect({ kind: "project", id: node.project_id })
+    if (focus !== node.project_id) onFocus(node.project_id)
+    return
   }
-  for (const edge of edges) g.setEdge(edge.source, edge.target)
-  dagre.layout(g)
-  const flowNodes: FlowNode[] = nodes.map((node) => {
-    const diamond = node.kind === "decision"
-    const width = diamond ? 150 : 220
-    const height = diamond ? 118 : 84
-    const point = g.node(node.id)
-    return {
-      id: node.id,
-      type: diamond ? "diamond" : "card",
-      position: { x: point.x - width / 2, y: point.y - height / 2 },
-      width,
-      height,
-      data: {
-        label: node.label,
-        sub: node.sub,
-        kind: node.kind,
-        dim: false,
-        fileId: node.file_id,
-        projectId: node.project_id,
-        serviceId: node.service_id,
-      },
-    }
-  })
-  const flowEdges: Edge[] = edges.map((edge) => ({
-    id: edge.id,
-    source: edge.source,
-    target: edge.target,
-    label: edge.label || undefined,
-    type: "smoothstep",
-    style: {
-      stroke: edge.label === "mentions" ? "rgba(240,193,74,0.75)" : "rgba(61,255,154,0.5)",
-      strokeWidth: 1.25,
-    },
-    labelStyle: { fill: "#c5d7cc", fontSize: 10 },
-    labelBgStyle: { fill: "#0b100e", fillOpacity: 0.9 },
-    labelBgPadding: [4, 2] as [number, number],
-    labelBgBorderRadius: 4,
-  }))
-  return { nodes: flowNodes, edges: flowEdges }
+  if (node.service_id) onSelect({ kind: "connection", id: node.service_id })
 }

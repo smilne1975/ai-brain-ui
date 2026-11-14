@@ -278,7 +278,18 @@ button:disabled { cursor: wait; opacity: 0.6; }
   background: linear-gradient(180deg, rgba(16, 28, 22, 0.96), rgba(8, 12, 10, 0.96));
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.25);
 }
+.rf-kicker { display: flex; justify-content: space-between; gap: 6px; align-items: center; color: var(--muted); font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+.rf-badge { font-style: normal; border-radius: 999px; padding: 0 5px; letter-spacing: 0.04em; }
+.rf-badge.sev-red { color: #ffd0d6; border: 1px solid rgba(255, 141, 154, 0.7); }
+.rf-badge.sev-amber { color: #ffe7a3; border: 1px solid rgba(240, 193, 74, 0.75); }
 .rf-card.kind-service { border-color: rgba(127, 214, 255, 0.45); }
+.rf-card.kind-workspace { border-color: rgba(127, 214, 255, 0.75); }
+.rf-card.kind-workset { border-color: rgba(61, 255, 154, 0.85); }
+.rf-card.kind-pcf { border-color: rgba(240, 193, 74, 0.9); }
+.rf-card.kind-variable { border-color: rgba(180, 255, 210, 0.45); }
+.rf-card.kind-cfg { border-color: rgba(61, 255, 154, 0.4); }
+.rf-card.sev-red { border-color: rgba(255, 141, 154, 0.85); box-shadow: 0 0 16px rgba(255, 141, 154, 0.16); }
+.rf-card.sev-amber { border-color: rgba(240, 193, 74, 0.9); }
 .rf-card.kind-note, .rf-card.kind-model { border-color: rgba(231, 255, 243, 0.28); }
 .rf-card.kind-store { border-color: rgba(210, 180, 255, 0.5); }
 .rf-label { font-weight: 600; font-size: 13px; line-height: 1.25; margin-top: 4px; }
