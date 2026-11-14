@@ -151,8 +151,10 @@ def build_brain(root: Path, progress: ProgressFn | None = None) -> dict:
         pf = [f for f in files if f["project_id"] == project["id"]]
         _fill_project(project, pf, skills)
     from backend.app.microstation import attach_microstation
+    from backend.app.microstation_config import attach_config
 
     attach_microstation(root, projects, files)
+    attach_config(root, projects, files)
     architecture = {
         "corpus": _corpus_graph(projects, files, connections),
         "projects": {p["id"]: _project_graph(p, files, connections) for p in projects},
@@ -186,7 +188,7 @@ def build_brain(root: Path, progress: ProgressFn | None = None) -> dict:
 def signature(root: Path, progress: ProgressFn | None = None) -> str:
     """Cheap change token: relative path, size, mtime. Not file contents."""
     root = root.expanduser().resolve()
-    h = hashlib.sha256(b"brain-v4")
+    h = hashlib.sha256(b"brain-v5")
     if not root.exists():
         h.update(b"missing")
         return h.hexdigest()
@@ -505,7 +507,7 @@ def _kind(path: Path, env_class: str | None) -> str:
         return "python"
     if ext in {".md", ".markdown", ".txt", ".rst"}:
         return "markdown"
-    if ext in {".json", ".yml", ".yaml", ".toml", ".ini", ".cfg"}:
+    if ext in {".json", ".yml", ".yaml", ".toml", ".ini", ".cfg", ".ucf", ".pcf"}:
         return "config"
     if ext in {".sh", ".ps1", ".bat", ".cmd"}:
         return "shell"

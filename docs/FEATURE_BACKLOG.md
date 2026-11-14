@@ -2,7 +2,7 @@
 
 **This file is the master list of AI Brain feature ideas.** On 14 Nov 2026 it was merged with the separate scout list kept by Stu's Grok Bot research routine. That list now just points here, and future research scans add their ideas to this file.
 
-Proposed additions are ranked by estimated value, then effort. They are ideas, not commitments or approved implementation plans. Value runs from 1 to 5, with AEC/BIM relevance scoring higher. Effort is small (S) or medium (M). Numbers are idea identifiers, not GitHub issue numbers. They were renumbered once in the 14 Nov 2026 merge (see *Renumbering* at the end). Ideas #1 and #2 are already built.
+Proposed additions are ranked by estimated value, then effort. They are ideas, not commitments or approved implementation plans. Value runs from 1 to 5, with AEC/BIM relevance scoring higher. Effort is small (S) or medium (M). Numbers are idea identifiers, not GitHub issue numbers. They were renumbered once in the 14 Nov 2026 merge (see *Renumbering* at the end). Ideas #1, #2, and #5 are already built.
 
 Each idea has a one-line summary in the ranked list and fuller notes under *Idea details*: what it would do, dated notes, sources (only pages actually opened), the date added and its status.
 
@@ -10,6 +10,7 @@ Each idea has a one-line summary in the ranked list and fuller notes under *Idea
 
 - **#1 MicroStation Python awareness — S, value 5:** built 2026-10-29 ([b9c2784](https://github.com/smilne1975/ai-brain-ui/commit/b9c27841f924cfe25639a13cd30667c878c15767)).
 - **#2 MCP server for Copilot agent mode — M, value 5:** built 2026-10-30 ([99f3327](https://github.com/smilne1975/ai-brain-ui/commit/99f332724fecab2896cfc813efc0add24a65328b)).
+- **#5 MicroStation configuration map — M, value 5:** built 2026-11-14. Read-only WorkSpace, WorkSet, and `.pcf` cards with resolved variables, levels, script links, and configuration faults. `GET /api/microstation/config` and the `get_microstation_config` MCP tool.
 
 Built features to check new ideas against (from the README and commits up to `c6c96cf`, 12 Nov 2026):
 - **Skills** radial graph of detected capabilities (skill catalog)
@@ -23,6 +24,7 @@ Built features to check new ideas against (from the README and commits up to `c6
 - **"Pick up where I left off"** brief + *Copy for new chat* + *Save BRAIN_HANDOFF.md*
 - **Daily / Weekly Digest** (+ markdown export to `.brain/digests/`, optional scheduled `BRAIN_DIGEST`)
 - **MicroStation Python** awareness (MSPy badge, `*.commands.xml` key-ins → handlers, pitfall chips with copy-a-fix Copilot prompts, key-in nodes on Blueprint, `GET /api/microstation`)
+- **MicroStation configuration** map (idea #5: `.cfg` / `.ucf` / `.pcf`, WorkSet and WorkSpace cards, levels, faults, `GET /api/microstation/config`, `get_microstation_config`)
 - **MCP server** for Copilot agent mode (read-only tools over the index, registered by the VS Code extension; built as idea #2)
 - Also in place: live file watcher refresh, SQLite scan cache, background scanning with progress, secret redaction / `.env` key-names-only, multi-provider LLM (OpenAI, Anthropic, Grok, Ollama) with heuristic no-key mode, `start.bat`/`start.cmd` launcher with port handling
 
@@ -32,7 +34,6 @@ Built features to check new ideas against (from the README and commits up to `c6
 
 - **#3 Dynamo graph reader — M:** Map `.dyn` graphs, packages, Python nodes and compatibility issues.
 - **#4 pyRevit map — M:** Show extensions, ribbon buttons, scripts and Revit versions.
-- **#5 MicroStation configuration map — M:** Explain WorkSpaces, WorkSets, variables and configuration problems.
 - **#6 Revit add-in version map — M:** Map .NET add-ins and flag version or manifest issues.
 
 ### Value 4/5
@@ -150,12 +151,13 @@ Built features to check new ideas against (from the README and commits up to `c6
 - **Sources:** https://docs.pyrevitlabs.io/extensions/
 - **Added:** 2026-10-28 · **Status:** idea
 
-### #5 MicroStation configuration map — value 5, effort M
+### #5 MicroStation configuration map — built
 
 - **Summary:** Explain WorkSpaces, WorkSets, variables and configuration problems.
 - **What:** Parse MicroStation configuration files (`*.cfg`, `*.ucf`, legacy `*.pcf`) found in project folders. Follow `%include` / `%if` / `%level` directives and show a per-WorkSet card listing the key variables (`MS_DEF`, `MS_RFDIR`, `MS_ADDINPATH`, `_USTN_WORKSETROOT`…), which level set each one (System → User), and which scripts or add-ins rely on them. Flag common faults: missing trailing `/` on folder values, hard-coded `C:/Users/...` paths, `%lock`ed variables a script tries to override, and `.pcf` projects that still need upgrading to WorkSets.
-- **Sources:** https://docs.bentley.com/LiveContent/web/MicroStation-v2026/Help/en/topics/123015/GUID-4B1D4DEF-A362-9896-05C3-D487EF7346C7.html · https://docs.bentley.com/LiveContent/web/MicroStation-v2026/Help/en/topics/123015/GUID-9B0F78CB-DEFE-41E7-BC3A-4E7B47D3F381.html
-- **Added:** 2026-10-29 · **Status:** idea
+- **Note (2026-11-14):** Built as a read-only Config view. It also follows `%else` / `%elif` / `%ifdef` / `%lock`, `$(VAR)` and `${VAR}`, and the `=`, `:`, `>`, and `<` operators. Missing and unresolved `%include` files are faults. `GET /api/microstation/config` and the `get_microstation_config` MCP tool return the same cards.
+- **Sources:** https://docs.bentley.com/LiveContent/web/MicroStation-v2026/Help/en/topics/123015/GUID-4B1D4DEF-A362-9896-05C3-D487EF7346C7.html · https://docs.bentley.com/LiveContent/web/MicroStation-v2026/Help/en/topics/123015/GUID-9B0F78CB-DEFE-41E7-BC3A-4E7B47D3F381.html · https://docs.bentley.com/LiveContent/web/MicroStation-v2026/Help/en/topics/123015/GUID-1DB07761-231A-41E5-86D0-BFD841C78F18.html
+- **Added:** 2026-10-29 · **Status:** built (2026-11-14)
 
 ### #6 Revit add-in version map — value 5, effort M
 

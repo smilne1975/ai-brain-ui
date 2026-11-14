@@ -1,4 +1,4 @@
-import type { AskResponse, Brain, BrainStatus, BriefBoard, CardBoard, ChatIndex, Digest, McpDoctor, McpUsage, Timeline } from "./types"
+import type { AskResponse, Brain, BrainStatus, BriefBoard, CardBoard, ChatIndex, ConfigBoard, Digest, McpDoctor, McpUsage, Timeline } from "./types"
 
 export async function fetchStatus(): Promise<BrainStatus> {
   const res = await fetch("/api/health")
@@ -61,6 +61,12 @@ export async function exportDigest(period: "day" | "week"): Promise<Digest> {
   const res = await fetch(`/api/digest/export?period=${period}`, { method: "POST" })
   if (!res.ok) throw new Error(await readDetail(res, "Could not save the digest."))
   return res.json() as Promise<Digest>
+}
+
+export async function fetchConfig(): Promise<ConfigBoard> {
+  const res = await fetch("/api/microstation/config")
+  if (!res.ok) throw new Error(await readDetail(res, "MicroStation configuration is not ready."))
+  return res.json() as Promise<ConfigBoard>
 }
 
 export async function fetchCards(): Promise<CardBoard> {

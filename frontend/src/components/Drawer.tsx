@@ -1,5 +1,6 @@
 import { saveHandoff } from "../api"
 import { BriefBlock, briefFor } from "./BriefBlock"
+import { ConfigNote } from "./ConfigNote"
 import { Keyins } from "./Keyins"
 import { ChatHistory, sessionsFor } from "./ChatHistory"
 import type { Brain, BriefBoard, ChatIndex, Selection } from "../types"
@@ -14,9 +15,10 @@ type Props = {
   onOpenFile: (id: string) => void
   onFocus: (id: string | null) => void
   onViewBlueprint: () => void
+  onOpenConfig: () => void
 }
 
-export function Drawer({ brain, chats, briefs, selection, onClose, onOpenFile, onFocus, onViewBlueprint }: Props) {
+export function Drawer({ brain, chats, briefs, selection, onClose, onOpenFile, onFocus, onViewBlueprint, onOpenConfig }: Props) {
   if (!selection) return null
   return (
     <aside className="drawer" role="dialog" aria-label="Detail">
@@ -32,6 +34,7 @@ export function Drawer({ brain, chats, briefs, selection, onClose, onOpenFile, o
           onFocus={onFocus}
           onViewBlueprint={onViewBlueprint}
           onOpenFile={onOpenFile}
+          onOpenConfig={onOpenConfig}
         />
       )}
       {selection.kind === "file" && <FileBody brain={brain} id={selection.id} onFocus={onFocus} />}
@@ -49,6 +52,7 @@ function ProjectBody({
   onFocus,
   onViewBlueprint,
   onOpenFile,
+  onOpenConfig,
 }: {
   brain: Brain
   chats: ChatIndex | null
@@ -57,6 +61,7 @@ function ProjectBody({
   onFocus: (id: string | null) => void
   onViewBlueprint: () => void
   onOpenFile: (id: string) => void
+  onOpenConfig: () => void
 }) {
   const project = brain.projects.find((item) => item.id === id)
   if (!project) return <p>That folder is no longer in the scan.</p>
@@ -68,6 +73,7 @@ function ProjectBody({
       <p className="lede">{project.summary}</p>
       {project.microstation ? <p className="quiet">MicroStation Python · MSPy</p> : null}
       <Keyins report={project.microstation} onOpenFile={onOpenFile} />
+      <ConfigNote report={project.microstation_config} onOpen={onOpenConfig} />
       <p className="quiet">Summary from {project.summary_source === "model" ? "the model" : "the local index"}.</p>
       <div className="stat-row">
         <Stat n={project.stats.files} label="files" />

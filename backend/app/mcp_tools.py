@@ -72,6 +72,17 @@ TOOLS = (
         "description": "Project status cards: activity, entry point, and run command.",
         "inputSchema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "get_microstation_config",
+        "description": "Resolved MicroStation WorkSet and WorkSpace variables, the level and file that set each one, linked scripts and add-ins, and configuration faults. Read-only.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project": {"type": "string", "description": "Optional project id or name. Omit for every WorkSet."},
+                "workset": {"type": "string", "description": "Optional WorkSet, WorkSpace, or legacy .pcf name."},
+            },
+        },
+    },
 )
 
 
@@ -279,6 +290,10 @@ def _invoke(name: str, args: dict, index: dict) -> tuple[str, bool]:
         if not brain:
             return note, False
         payload = list_projects(index["root"], brain)
+    elif name == "get_microstation_config":
+        if not brain:
+            return note, False
+        payload = get_microstation_config(index["root"], brain, args.get("project"), args.get("workset"))
     else:
         return f"Unknown tool {name}.", True
     if isinstance(payload, str):
@@ -434,6 +449,92 @@ def explain_file(brain: dict, path: str) -> dict:
         "skills": match.get("skills") or [],
         "unfinished": unfinished[:12],
         "keyins": keyins,
+    }
+
+
+def get_microstation_config(root: Path, brain: dict, project: object, workset: object) -> dict:
+    from backend.app.microstation_config import build_config
+
+    projects = brain.get("projects") or []
+    if projects and all("microstation_config" in item for item in projects):
+        board = [item["microstation_config"] for item in projects if item.get("microstation_config")]
+    else:
+        board = build_config(root, projects, brain.get("files") or []).get("projects") or []
+    wanted = str(project or "").strip()
+    if wanted:
+        match = _find_project(brain, wanted)
+        if match is None:
+            return {"error": f"No project named {redact(wanted)[:80]}."}
+        board = [item for item in board if item.get("project_id") == match["id"]]
+        if not board:
+            return {"project": match.get("name") or match["id"], "units": [], "note": "No MicroStation configuration files in this folder."}
+    needle = str(workset or "").strip().casefold()
+    rows = []
+    for item in board:
+        units = []
+        for unit in item.get("units") or []:
+            if needle and needle not in {
+                str(unit.get("name") or "").casefold(),
+                str(unit.get("workspace") or "").casefold(),
+                str(unit.get("kind") or "").casefold(),
+            }:
+                continue
+            units.append(_slim_unit(unit))
+        if units:
+            rows.append({"project": item.get("name") or item.get("project_id"), "project_id": item.get("project_id"), "units": units})
+    if wanted and not rows:
+        return {"project": wanted, "units": [], "note": "No matching WorkSet or WorkSpace."}
+    return {"projects": rows}
+
+
+def _slim_unit(unit: dict) -> dict:
+    variables = []
+    for item in unit.get("variables") or []:
+        if not item.get("value") and not item.get("references") and not item.get("locked") and item.get("name") not in {
+            "MS_DEF",
+            "MS_RFDIR",
+            "MS_ADDINPATH",
+            "_USTN_WORKSETROOT",
+            "_USTN_WORKSPACEROOT",
+            "MS_SEEDFILES",
+            "MS_DGNLIBLIST",
+        }:
+            continue
+        refs = []
+        for ref in (item.get("references") or [])[:8]:
+            line = ref.get("line")
+            refs.append(f"{ref.get('kind') or 'file'} {ref.get('rel') or ''}" + (f":{line}" if line else ""))
+        variables.append(
+            {
+                "name": item.get("name"),
+                "value": item.get("value") or "",
+                "level": item.get("level") or "",
+                "file": item.get("file") or "",
+                "line": item.get("line"),
+                "locked": bool(item.get("locked")),
+                "references": refs,
+            }
+        )
+    faults = []
+    for fault in unit.get("faults") or []:
+        faults.append(
+            {
+                "id": fault.get("id"),
+                "severity": fault.get("severity"),
+                "title": fault.get("title"),
+                "detail": fault.get("detail"),
+                "variable": fault.get("variable") or "",
+                "file": fault.get("file") or "",
+                "line": fault.get("line"),
+            }
+        )
+    return {
+        "kind": unit.get("kind"),
+        "name": unit.get("name"),
+        "workspace": unit.get("workspace") or "",
+        "file": unit.get("file") or "",
+        "variables": variables,
+        "faults": faults,
     }
 
 
@@ -660,7 +761,7 @@ def _check_fresh(index: dict) -> dict:
 
 def _check_runnable() -> dict:
     names = [tool["name"] for tool in tool_specs()]
-    if {"search_projects", "get_brief", "get_timeline", "explain_file", "list_projects"} <= set(names):
+    if {"search_projects", "get_brief", "get_timeline", "explain_file", "list_projects", "get_microstation_config"} <= set(names):
         return _row("server", "pass", "MCP server can run", "python -m brain_mcp speaks MCP over stdio, and POST /mcp speaks the same JSON-RPC.", "")
     return _row("server", "fail", "MCP server is incomplete", "A tool definition is missing.", "Reinstall the ai-brain-ui checkout.")
 

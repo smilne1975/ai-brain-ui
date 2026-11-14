@@ -1,4 +1,4 @@
-export type View = "skills" | "blueprint" | "system" | "connections" | "copilot" | "timeline" | "cards" | "digest"
+export type View = "skills" | "blueprint" | "system" | "connections" | "copilot" | "timeline" | "cards" | "digest" | "config"
 
 export type BriefTodo = { text: string; rel: string; kind: string; line?: number }
 export type BriefFile = { rel: string; file_id: string | null; why: string }
@@ -150,6 +150,63 @@ export type MicrostationPitfall = {
   prompt: string
 }
 
+export type ConfigReference = {
+  rel: string
+  file_id: string | null
+  line: number | null
+  kind: string
+  how: string
+}
+
+export type ConfigVariable = {
+  name: string
+  value: string
+  level: string
+  file: string
+  file_id: string | null
+  line: number | null
+  locked: boolean
+  lock_file: string
+  lock_line: number | null
+  operator: string
+  references: ConfigReference[]
+}
+
+export type ConfigFault = {
+  id: string
+  severity: "red" | "amber"
+  title: string
+  detail: string
+  prompt: string
+  variable: string
+  file: string
+  file_id: string | null
+  line: number | null
+}
+
+export type ConfigUnit = {
+  id: string
+  kind: "workset" | "workspace" | "pcf" | "config" | "user"
+  name: string
+  workspace: string
+  project_id: string
+  file: string
+  file_id: string | null
+  files: string[]
+  variables: ConfigVariable[]
+  faults: ConfigFault[]
+}
+
+export type ConfigProject = {
+  project_id: string
+  name: string
+  units: ConfigUnit[]
+}
+
+export type ConfigBoard = {
+  projects: ConfigProject[]
+}
+
 export type MicrostationReport = {
   project_id: string
   name: string
@@ -241,6 +298,7 @@ export type Project = {
   services: string[]
   entries: string[]
   microstation: MicrostationReport | null
+  microstation_config: ConfigProject | null
   stats: {
     files: number
     python: number
