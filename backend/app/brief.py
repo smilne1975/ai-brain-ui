@@ -89,6 +89,7 @@ def _one(root: Path, brain: dict, project: dict, chats: dict, now: datetime) -> 
     key_files = _key_files(files, sessions, recent, entry)
     last_doing = _last_doing(sessions, recent, commits, project)
     next_step = _next_step(todos, files, sessions, run_command, project)
+    config = _config_summary(project)
     return {
         "project_id": project["id"],
         "name": project.get("name") or project["id"],
@@ -102,6 +103,7 @@ def _one(root: Path, brain: dict, project: dict, chats: dict, now: datetime) -> 
         "next_step": next_step,
         "key_files": key_files[:6],
         "run_command": redact(run_command),
+        "config": config,
         "chats": [
             {
                 "id": session.get("id"),
@@ -238,6 +240,51 @@ def _next_step(todos: list[dict], files: list[dict], sessions: list[dict], run_c
     return "Re-read the README and write the next step at the top."
 
 
+def _config_summary(project: dict) -> dict | None:
+    report = project.get("microstation_config") or None
+    if not report or not report.get("units"):
+        return None
+    key_names = {
+        "MS_DEF",
+        "MS_RFDIR",
+        "MS_ADDINPATH",
+        "_USTN_WORKSETROOT",
+        "_USTN_WORKSPACEROOT",
+        "MS_SEEDFILES",
+        "MS_DGNLIBLIST",
+    }
+    units = []
+    for unit in report["units"][:6]:
+        variables = []
+        for var in unit.get("variables") or []:
+            if var.get("name") not in key_names:
+                continue
+            if not var.get("value") and not var.get("locked"):
+                continue
+            variables.append(
+                {
+                    "name": var.get("name"),
+                    "value": var.get("value") or "",
+                    "level": var.get("level") or "",
+                    "file": var.get("file") or "",
+                }
+            )
+        units.append(
+            {
+                "kind": unit.get("kind"),
+                "name": unit.get("name"),
+                "workspace": unit.get("workspace") or "",
+                "file": unit.get("file") or "",
+                "faults": [
+                    {"id": item.get("id"), "title": item.get("title"), "severity": item.get("severity")}
+                    for item in (unit.get("faults") or [])[:6]
+                ],
+                "variables": variables,
+            }
+        )
+    return {"units": units}
+
+
 def _looks_unfinished(rec: dict) -> bool:
     name = (rec.get("name") or "").lower()
     if rec.get("kind") not in {"python", "shell", "notebook"}:
@@ -277,6 +324,22 @@ def _copy_text(brief: dict) -> str:
         lines.extend(f"- {item['rel']} ({item['why']})" for item in brief["key_files"])
     else:
         lines.append("- None picked out.")
+    config = brief.get("config") or None
+    if config and config.get("units"):
+        lines.extend(["", "MicroStation config:"])
+        for unit in config["units"][:4]:
+            kind = {"workset": "WorkSet", "workspace": "WorkSpace", "pcf": "Legacy .pcf"}.get(unit.get("kind") or "", "Config")
+            where = f" in {unit['workspace']}" if unit.get("workspace") and unit.get("kind") == "workset" else ""
+            faults = ", ".join(item.get("title") or item.get("id") or "" for item in (unit.get("faults") or [])[:3])
+            vars_text = ", ".join(
+                f"{item['name']}={item['value']} ({item['level'] or 'unset'})" for item in (unit.get("variables") or [])[:4] if item.get("value")
+            )
+            line = f"- {kind} {unit.get('name') or ''}{where}."
+            if vars_text:
+                line += f" {vars_text}."
+            if faults:
+                line += f" Faults: {faults}."
+            lines.append(line)
     lines.append("")
     if brief["run_command"]:
         lines.extend(["Run:", f"`{brief['run_command']}`", ""])

@@ -336,8 +336,31 @@ def search_projects(brain: dict, query: str, limit: object) -> dict:
                 "score": score,
             }
         )
+    for row in _config_rows(brain):
+        score = _score(tokens, row.get("text") or "")
+        if score <= 0:
+            continue
+        hits.append(
+            {
+                "project": row.get("project") or names.get(row.get("project_id"), row.get("project_id")),
+                "project_id": row.get("project_id"),
+                "file": row.get("file") or "",
+                "file_id": row.get("file_id"),
+                "snippet": redact(row.get("snippet") or ""),
+                "score": score,
+            }
+        )
     hits.sort(key=lambda item: (-item["score"], item["project"] or "", item["file"]))
     return {"query": redact(query)[:200], "hits": hits[:cap]}
+
+
+def _config_rows(brain: dict) -> list[dict]:
+    rows = brain.get("config_index")
+    if isinstance(rows, list):
+        return rows
+    from backend.app.microstation_config import config_search_rows
+
+    return config_search_rows(brain.get("projects") or [])
 
 
 def get_brief(root: Path, brain: dict, project: str) -> dict:
@@ -356,6 +379,7 @@ def get_brief(root: Path, brain: dict, project: str) -> dict:
         "key_files": brief.get("key_files") or [],
         "run_command": brief.get("run_command") or "",
         "copy_text": brief.get("copy_text") or "",
+        "config": brief.get("config"),
     }
 
 
@@ -449,6 +473,7 @@ def explain_file(brain: dict, path: str) -> dict:
         "skills": match.get("skills") or [],
         "unfinished": unfinished[:12],
         "keyins": keyins,
+        "config": _explain_config(project, match.get("rel") or ""),
     }
 
 
@@ -481,10 +506,41 @@ def get_microstation_config(root: Path, brain: dict, project: object, workset: o
                 continue
             units.append(_slim_unit(unit))
         if units:
-            rows.append({"project": item.get("name") or item.get("project_id"), "project_id": item.get("project_id"), "units": units})
+            rows.append(
+                {
+                    "project": item.get("name") or item.get("project_id"),
+                    "project_id": item.get("project_id"),
+                    "units": units,
+                    "graph": _slim_graph(item.get("graph") or {}),
+                }
+            )
     if wanted and not rows:
         return {"project": wanted, "units": [], "note": "No matching WorkSet or WorkSpace."}
     return {"projects": rows}
+
+
+def _slim_graph(graph: dict) -> dict:
+    nodes = []
+    for node in (graph or {}).get("nodes") or []:
+        if len(nodes) >= 40:
+            break
+        nodes.append(
+            {
+                "id": node.get("id"),
+                "label": node.get("label"),
+                "kind": node.get("kind"),
+                "badge": node.get("badge") or "",
+            }
+        )
+    keep = {node["id"] for node in nodes}
+    edges = []
+    for edge in (graph or {}).get("edges") or []:
+        if edge.get("source") not in keep or edge.get("target") not in keep:
+            continue
+        edges.append({"source": edge.get("source"), "target": edge.get("target"), "label": edge.get("label") or ""})
+        if len(edges) >= 60:
+            break
+    return {"nodes": nodes, "edges": edges}
 
 
 def _slim_unit(unit: dict) -> dict:
@@ -536,6 +592,36 @@ def _slim_unit(unit: dict) -> dict:
         "variables": variables,
         "faults": faults,
     }
+
+
+def _explain_config(project: dict | None, rel: str) -> dict | None:
+    report = (project or {}).get("microstation_config") or None
+    if not report or not rel:
+        return None
+    matched = []
+    for unit in report.get("units") or []:
+        files = set(unit.get("files") or [])
+        if unit.get("file"):
+            files.add(unit["file"])
+        referenced = any(ref.get("rel") == rel for var in unit.get("variables") or [] for ref in var.get("references") or [])
+        if rel not in files and not referenced:
+            continue
+        names = [
+            var.get("name")
+            for var in unit.get("variables") or []
+            if var.get("file") == rel or any(ref.get("rel") == rel for ref in var.get("references") or [])
+        ]
+        matched.append(
+            {
+                "kind": unit.get("kind"),
+                "name": unit.get("name"),
+                "variables": [name for name in names if name][:8],
+                "faults": [item.get("id") for item in (unit.get("faults") or [])[:6]],
+            }
+        )
+    if not matched:
+        return None
+    return {"units": matched[:4]}
 
 
 def list_projects(root: Path, brain: dict) -> dict:

@@ -128,6 +128,10 @@ The demo folder `demo-projects/levels-report` registers `MYREPORT LEVELS`, impor
 
 Open **Config** (or press `9`). The page is read-only: it parses `*.cfg`, `*.ucf`, and legacy `*.pcf` files already in the scan and never writes them.
 
+**Graph** is the default. It uses the same node canvas as Blueprint. Nodes are configuration files, WorkSpaces, WorkSets, and key variables (hide those with **Variables**). Edges are `%include`, WorkSpace to WorkSet, WorkSet or `.pcf` to the project folder, a variable to the file that set it, and an override from a later level back to the earlier file. A fault badge marks a missing trailing `/`, a `C:/Users` path, a `%lock` override, an unresolved include, or a `.pcf` that still needs a WorkSet. **Cards** is the same data as a list.
+
+On the Blueprint map, those WorkSpace, WorkSet, and variable nodes sit on the project folder and on the scripts that reference them. A resolved `_USTN_WORKSETROOT`, `_USTN_WORKSPACEROOT`, or `MS_DEF` that points at another scanned folder is an edge on the corpus map. The same facts are in the pick-up brief, in `search_projects`, and on the timeline line for a configuration file that was saved. They are stored in the scan cache, so a later search does not read the files again.
+
 Each card is one WorkSpace, one WorkSet, or one `.pcf` that still needs upgrading. The table lists `MS_DEF`, `MS_RFDIR`, `MS_ADDINPATH`, `_USTN_WORKSETROOT`, `_USTN_WORKSPACEROOT`, `MS_SEEDFILES`, and `MS_DGNLIBLIST`, plus any other variable a script or add-in references. For each one it shows the resolved value, the level that set it (System, Application, Organization, WorkSpace, WorkSet, Role, User), and the file and line. `$(VAR)` is expanded when the value is used. `${VAR}` is expanded where it is written. Assignments understand `=`, `:`, `>`, and `<`. `%include`, `%if` / `%ifdef` / `%elif` / `%else` / `%endif`, `%level`, and `%lock` are followed. A higher level wins unless the variable is locked.
 
 Scripts and add-ins that mention a variable are linked under that row, using the same MicroStation Python scan as the key-in list. A fault chip copies a short Copilot prompt:
@@ -142,7 +146,11 @@ Scripts and add-ins that mention a variable are linked under that row, using the
 
 `demo-projects/levels-report` includes a Bridge WorkSpace, a River WorkSet, a user `.ucf`, and `legacy/OldJob.pcf`, so the faults are visible without a real MicroStation install.
 
-![MicroStation configuration cards](docs/microstation-config.png)
+![MicroStation configuration graph](docs/microstation-config-graph.png)
+
+The card list is the same data without the canvas.
+
+![MicroStation configuration on the Blueprint](docs/microstation-brain-graph.png)
 
 ## Copilot Link
 

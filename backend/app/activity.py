@@ -113,7 +113,7 @@ def build_timeline(root: Path, brain: dict, days: int, now: datetime | None = No
                 "saved",
                 "mtime",
                 None,
-                _file_note("saved", rec["rel"], rec),
+                _config_file_note(project, rec["rel"]) or _file_note("saved", rec["rel"], rec),
             )
         for commit in commits:
             when = commit.get("when")
@@ -663,6 +663,23 @@ def _change_summary(proj: dict) -> str:
     if len(files) == 1:
         return files[0].get("note") or f"Saved {files[0]['rel']}."
     return f"Saved {names}."
+
+
+def _config_file_note(project: dict, rel: str) -> str:
+    report = project.get("microstation_config") or {}
+    for unit in report.get("units") or []:
+        names = set(unit.get("files") or [])
+        if unit.get("file"):
+            names.add(unit["file"])
+        if rel not in names:
+            continue
+        kind = {"workset": "WorkSet", "workspace": "WorkSpace", "pcf": "Legacy .pcf", "user": "User"}.get(unit.get("kind") or "", "Config")
+        text = f"{kind} {unit.get('name') or ''}".strip()
+        faults = unit.get("faults") or []
+        if faults:
+            text += f" · {len(faults)} configuration fault{'s' if len(faults) != 1 else ''}"
+        return text
+    return ""
 
 
 def _file_note(change: str, rel: str, rec: dict | None) -> str:

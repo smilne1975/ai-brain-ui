@@ -1,5 +1,6 @@
-import { useState } from "react"
-import type { Brain, ConfigBoard, ConfigFault, ConfigUnit, ConfigVariable } from "../types"
+import { useMemo, useState } from "react"
+import { FlowGraph } from "../components/FlowGraph"
+import type { Brain, ConfigBoard, ConfigFault, ConfigUnit, ConfigVariable, GraphEdge, GraphNode } from "../types"
 import { matchesQuery, projectName } from "../format"
 
 type Props = {
@@ -22,6 +23,8 @@ const KIND: Record<ConfigUnit["kind"], string> = {
 }
 
 export function ConfigView({ brain, data, loading, error, query, focus, onOpenProject, onOpenFile }: Props) {
+  const [mode, setMode] = useState<"graph" | "cards">("graph")
+  const [showVariables, setShowVariables] = useState(true)
   const units = (data?.projects ?? [])
     .filter((project) => !focus || project.project_id === focus)
     .flatMap((project) => project.units.map((unit) => ({ project: project.name, unit })))
@@ -32,9 +35,45 @@ export function ConfigView({ brain, data, loading, error, query, focus, onOpenPr
       return matchesQuery(query, `${project} ${unit.name} ${unit.workspace} ${unit.file} ${vars} ${faults} ${refs}`)
     })
   const faults = units.reduce((count, item) => count + item.unit.faults.length, 0)
+  const graph = useMemo(() => mergeGraphs(data, focus, showVariables), [data, focus, showVariables])
 
   return (
-    <div className="conn-page">
+    <div className={mode === "graph" ? "view cfg-graph-view" : "conn-page"}>
+      <div className={mode === "graph" ? "viz flow-viz" : "cfg-list"}>
+      <div className="bp-toolbar">
+        <button type="button" className={mode === "graph" ? "on" : ""} onClick={() => setMode("graph")}>
+          Graph
+        </button>
+        <button type="button" className={mode === "cards" ? "on" : ""} onClick={() => setMode("cards")}>
+          Cards
+        </button>
+        {mode === "graph" ? (
+          <button type="button" className={showVariables ? "on" : ""} onClick={() => setShowVariables((value) => !value)}>
+            Variables
+          </button>
+        ) : null}
+      </div>
+      {mode === "graph" ? (
+        <div className="flow-canvas">
+          {loading && !data ? (
+            <p className="empty-copy">Reading configuration files…</p>
+          ) : graph.nodes.length === 0 ? (
+            <p className="empty-copy">No MicroStation .cfg, .ucf, or .pcf files in this scan.</p>
+          ) : (
+            <FlowGraph
+              nodes={graph.nodes}
+              edges={graph.edges}
+              query={query}
+              onNodeClick={(node) => {
+                if (node.file_id) onOpenFile(node.file_id)
+                else if (node.project_id) onOpenProject(node.project_id)
+              }}
+            />
+          )}
+        </div>
+      ) : null}
+      {mode === "cards" ? (
+        <>
       <header className="conn-head">
         <div>
           <p className="eyebrow">MicroStation</p>
@@ -59,8 +98,28 @@ export function ConfigView({ brain, data, loading, error, query, focus, onOpenPr
           <ConfigCard key={unit.id} project={project} unit={unit} onOpenProject={onOpenProject} onOpenFile={onOpenFile} />
         ))}
       </div>
+        </>
+      ) : null}
+      </div>
     </div>
   )
+}
+
+function mergeGraphs(data: ConfigBoard | null, focus: string | null, showVariables: boolean): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const projects = (data?.projects ?? []).filter((project) => !focus || project.project_id === focus)
+  const nodes: GraphNode[] = []
+  const edges: GraphEdge[] = []
+  for (const project of projects) {
+    for (const node of project.graph?.nodes ?? []) {
+      if (!showVariables && node.kind === "variable") continue
+      nodes.push(node)
+    }
+    const ids = new Set(nodes.map((node) => node.id))
+    for (const edge of project.graph?.edges ?? []) {
+      if (ids.has(edge.source) && ids.has(edge.target)) edges.push(edge)
+    }
+  }
+  return { nodes, edges }
 }
 
 function ConfigCard({

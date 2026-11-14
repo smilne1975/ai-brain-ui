@@ -151,10 +151,11 @@ def build_brain(root: Path, progress: ProgressFn | None = None) -> dict:
         pf = [f for f in files if f["project_id"] == project["id"]]
         _fill_project(project, pf, skills)
     from backend.app.microstation import attach_microstation
-    from backend.app.microstation_config import attach_config
+    from backend.app.microstation_config import attach_config, config_search_rows
 
     attach_microstation(root, projects, files)
     attach_config(root, projects, files)
+    config_index = config_search_rows(projects)
     architecture = {
         "corpus": _corpus_graph(projects, files, connections),
         "projects": {p["id"]: _project_graph(p, files, connections) for p in projects},
@@ -180,6 +181,7 @@ def build_brain(root: Path, progress: ProgressFn | None = None) -> dict:
         "connections": connections,
         "architecture": architecture,
         "suggestions": _suggestions(projects, skills, connections),
+        "config_index": config_index,
         "stats": stats,
         "summaries": "heuristic",
     }
@@ -188,7 +190,7 @@ def build_brain(root: Path, progress: ProgressFn | None = None) -> dict:
 def signature(root: Path, progress: ProgressFn | None = None) -> str:
     """Cheap change token: relative path, size, mtime. Not file contents."""
     root = root.expanduser().resolve()
-    h = hashlib.sha256(b"brain-v5")
+    h = hashlib.sha256(b"brain-v6")
     if not root.exists():
         h.update(b"missing")
         return h.hexdigest()
@@ -1043,10 +1045,14 @@ def _project_graph(project: dict, files: list[dict], connections: list[dict]) ->
         if not linked:
             edges.append({"id": f"e:svcroot:{project['id']}:{conn['id']}", "source": root_id, "target": sid, "label": ""})
     from backend.app.microstation import graph_extras
+    from backend.app.microstation_config import brain_graph_extras
 
     extra_nodes, extra_edges = graph_extras(project, chosen_ids)
     nodes.extend(extra_nodes)
     edges.extend(extra_edges)
+    cfg_nodes, cfg_edges = brain_graph_extras(project, chosen_ids)
+    nodes.extend(cfg_nodes)
+    edges.extend(cfg_edges)
     return {"nodes": nodes, "edges": _dedupe_edges(edges)}
 
 
@@ -1114,6 +1120,11 @@ def _corpus_graph(projects: list[dict], files: list[dict], connections: list[dic
                         "label": "mentions",
                     }
                 )
+    from backend.app.microstation_config import corpus_config_links
+
+    extra_nodes, extra_edges = corpus_config_links(projects)
+    nodes.extend(extra_nodes)
+    edges.extend(extra_edges)
     return {"nodes": nodes, "edges": _dedupe_edges(edges)}
 
 
