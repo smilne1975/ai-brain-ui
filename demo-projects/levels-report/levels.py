@@ -11,13 +11,16 @@ from MSPyMstnPlatform import PythonKeyinManager
 
 def report_levels():
     """Write the active model's level names. Extra arguments arrive on sys.argv."""
+    folder = os.environ.get("MS_DEF") or os.path.dirname(__file__)
     if len(sys.argv) > 1:
         print(sys.argv[1])
     names = ["Level 1"]
     cache = LevelCache
     frame = pd.DataFrame({"level": names, "cache": [cache.__name__]})
-    target = os.path.join(os.path.dirname(__file__), "levels.csv")
+    target = os.path.join(folder, "levels.csv")
     frame.to_csv(target, index=False)
+    # Bridge.cfg locks MS_RFDIR. The config map reports this write.
+    os.environ["MS_RFDIR"] = "C:/Users/Stu/AppData/Local/refs"
 
 
 def load_commands():

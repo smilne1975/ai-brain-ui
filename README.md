@@ -2,7 +2,7 @@
 
 A local mission-control view of a messy folder of AI and coding projects: markdown notes, Python scripts, configs, and half-finished Copilot experiments. It scans the folder on your machine, then draws how the work connects.
 
-Eight views:
+Nine views:
 
 - **Skills** — radial map of capabilities detected in the files
 - **Blueprint** — flowchart of each folder (and of the whole corpus), with an ask bar. This is the map.
@@ -12,6 +12,7 @@ Eight views:
 - **Timeline** — “what was I doing?”, grouped by day and week across every scanned folder
 - **Cards** — one plain-English status card per folder
 - **Digest** — today or this week across every folder
+- **Config** — MicroStation WorkSpaces, WorkSets, and legacy project files (press `9`)
 
 Nothing is uploaded. The app binds to `127.0.0.1`.
 
@@ -123,6 +124,26 @@ The demo folder `demo-projects/levels-report` registers `MYREPORT LEVELS`, impor
 
 ![MicroStation key-ins on the levels-report card](docs/microstation-keyins.png)
 
+## MicroStation configuration
+
+Open **Config** (or press `9`). The page is read-only: it parses `*.cfg`, `*.ucf`, and legacy `*.pcf` files already in the scan and never writes them.
+
+Each card is one WorkSpace, one WorkSet, or one `.pcf` that still needs upgrading. The table lists `MS_DEF`, `MS_RFDIR`, `MS_ADDINPATH`, `_USTN_WORKSETROOT`, `_USTN_WORKSPACEROOT`, `MS_SEEDFILES`, and `MS_DGNLIBLIST`, plus any other variable a script or add-in references. For each one it shows the resolved value, the level that set it (System, Application, Organization, WorkSpace, WorkSet, Role, User), and the file and line. `$(VAR)` is expanded when the value is used. `${VAR}` is expanded where it is written. Assignments understand `=`, `:`, `>`, and `<`. `%include`, `%if` / `%ifdef` / `%elif` / `%else` / `%endif`, `%level`, and `%lock` are followed. A higher level wins unless the variable is locked.
+
+Scripts and add-ins that mention a variable are linked under that row, using the same MicroStation Python scan as the key-in list. A fault chip copies a short Copilot prompt:
+
+- a folder value with no trailing `/`
+- a hard-coded `C:/Users/...` path
+- a `%lock` that a later file or script tries to override
+- an `%include` that is missing or does not resolve inside the scan
+- a `.pcf` that still needs to become a WorkSet
+
+`GET /api/microstation/config` returns every card. `GET /api/microstation/config/{project}` returns one folder. The Copilot tool `get_microstation_config` reads the same object. Like the other tools, the answer is redacted and capped at about 20 KB.
+
+`demo-projects/levels-report` includes a Bridge WorkSpace, a River WorkSet, a user `.ucf`, and `legacy/OldJob.pcf`, so the faults are visible without a real MicroStation install.
+
+![MicroStation configuration cards](docs/microstation-config.png)
+
 ## Copilot Link
 
 GitHub Copilot agent mode can query the indexed folders through an MCP server instead of grepping the tree. The tools are read-only, local, and work with no API key. They use the SQLite scan cache. They do not start a scan. If a scan is already running, they answer from the last finished index and say so.
@@ -136,6 +157,7 @@ Tools:
 - `get_timeline` — saves, git subjects, and Copilot sessions
 - `explain_file` — imports, skills, unfinished markers, and MicroStation key-ins
 - `list_projects` — status, entry point, and run command
+- `get_microstation_config` — WorkSet and WorkSpace variables, levels, and configuration faults
 - resource `brain://digest/latest` — the latest daily digest markdown
 
 `.env` values are never returned. Every answer is passed through the same redaction as the rest of the app and capped at about 20 KB. Calls are appended to `.brain/mcp_usage.jsonl` under the projects folder (gitignored). `GET /api/mcp/usage` and `GET /api/mcp/doctor` feed the panel. While the dashboard is running, the same JSON-RPC is available at `POST /mcp`.

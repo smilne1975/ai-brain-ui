@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { BriefBlock, briefFor } from "../components/BriefBlock"
 import { ChatHistory, sessionsFor } from "../components/ChatHistory"
+import { ConfigNote } from "../components/ConfigNote"
 import { Keyins } from "../components/Keyins"
 import type { Brain, BriefBoard, CardBoard, ChatIndex, ProjectCard } from "../types"
 import { formatWhen, matchesQuery, projectName } from "../format"
@@ -18,6 +19,7 @@ type Props = {
   focus: string | null
   onOpenProject: (id: string) => void
   onOpenFile: (id: string) => void
+  onOpenConfig: () => void
 }
 
 const FILTERS: { id: Filter; label: string }[] = [
@@ -27,7 +29,7 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: "abandoned", label: "Abandoned" },
 ]
 
-export function CardsView({ brain, data, chats, briefs, loading, error, query, focus, onOpenProject, onOpenFile }: Props) {
+export function CardsView({ brain, data, chats, briefs, loading, error, query, focus, onOpenProject, onOpenFile, onOpenConfig }: Props) {
   const [filter, setFilter] = useState<Filter>("all")
   const cards = (data?.cards ?? []).filter((card) => {
     if (focus && card.project_id !== focus) return false
@@ -90,6 +92,10 @@ export function CardsView({ brain, data, chats, briefs, loading, error, query, f
             </div>
             <p className="status-blurb">{card.blurb}</p>
             <Keyins report={card.microstation} onOpenFile={onOpenFile} />
+            <ConfigNote
+              report={brain.projects.find((project) => project.id === card.project_id)?.microstation_config}
+              onOpen={onOpenConfig}
+            />
             {briefFor(briefs?.briefs, card.project_id) && (
               <BriefBlock brief={briefFor(briefs?.briefs, card.project_id)!} compact onOpenFile={onOpenFile} />
             )}

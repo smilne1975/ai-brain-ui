@@ -21,6 +21,7 @@ from backend.app.ask import answer
 from backend.app.engine import Engine, Hub
 from backend.app.llm import resolve_provider
 from backend.app.microstation import build_microstation
+from backend.app.microstation_config import build_config
 from backend.app.mcp_rpc import dispatch
 from backend.app.mcp_tools import doctor_report, usage_report
 from backend.app.scanner import file_excerpt
@@ -146,6 +147,24 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail="period must be day or week") from None
         except OSError as exc:
             raise HTTPException(status_code=500, detail="Could not write the digest") from exc
+
+    @app.get("/api/microstation/config")
+    def microstation_config_index():
+        engine: Engine = app.state.engine
+        return _config_board(engine)
+
+    @app.get("/api/microstation/config/{project_id}")
+    def microstation_config_project(project_id: str):
+        engine: Engine = app.state.engine
+        brain = _require_brain(engine)
+        known = {project["id"] for project in brain.get("projects") or []}
+        if project_id not in known:
+            raise HTTPException(status_code=404, detail="Folder is not in the scan")
+        board = _config_board(engine)
+        match = next((item for item in board["projects"] if item["project_id"] == project_id), None)
+        if match is None:
+            raise HTTPException(status_code=404, detail="No MicroStation configuration in this folder")
+        return match
 
     @app.get("/api/microstation")
     def microstation_index():
@@ -290,6 +309,14 @@ async def _digest_scheduler(engine: Engine) -> None:
             await asyncio.sleep(2)
     except asyncio.CancelledError:
         return
+
+
+def _config_board(engine: Engine) -> dict:
+    brain = _require_brain(engine)
+    projects = brain.get("projects") or []
+    if projects and all("microstation_config" in project for project in projects):
+        return {"projects": [project["microstation_config"] for project in projects if project.get("microstation_config")]}
+    return build_config(engine.root, projects, brain.get("files") or [])
 
 
 def _microstation_board(engine: Engine) -> dict:

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
-import { fetchBrain, fetchBriefs, fetchCards, fetchChats, fetchStatus, fetchTimeline, rescan } from "./api"
+import { fetchBrain, fetchBriefs, fetchCards, fetchChats, fetchConfig, fetchStatus, fetchTimeline, rescan } from "./api"
 import { Drawer } from "./components/Drawer"
 import { formatWhen, matchesQuery, projectName } from "./format"
-import type { Brain, BrainStatus, BriefBoard, CardBoard, ChatIndex, Selection, Timeline, View } from "./types"
+import type { Brain, BrainStatus, BriefBoard, CardBoard, ChatIndex, ConfigBoard, Selection, Timeline, View } from "./types"
 import { BlueprintView } from "./views/BlueprintView"
 import { CardsView } from "./views/CardsView"
 import { ConnectionsView } from "./views/ConnectionsView"
@@ -10,6 +10,7 @@ import { SkillsView } from "./views/SkillsView"
 import { SystemView } from "./views/SystemView"
 import { DigestView } from "./views/DigestView"
 import { CopilotLinkView } from "./views/CopilotLinkView"
+import { ConfigView } from "./views/ConfigView"
 import { TimelineView } from "./views/TimelineView"
 
 const VIEWS: { id: View; label: string; hint: string }[] = [
@@ -21,6 +22,7 @@ const VIEWS: { id: View; label: string; hint: string }[] = [
   { id: "timeline", label: "Timeline", hint: "5" },
   { id: "cards", label: "Cards", hint: "6" },
   { id: "digest", label: "Digest", hint: "7" },
+  { id: "config", label: "Config", hint: "9" },
 ]
 
 function readView(): View {
@@ -28,7 +30,7 @@ function readView(): View {
   return VIEWS.some((view) => view.id === hash) ? (hash as View) : "skills"
 }
 
-type Hit = { kind: Selection["kind"]; id: string; label: string; meta: string }
+type Hit = { kind: Selection["kind"]; id: string; label: string; meta: string; view?: View }
 
 export default function App() {
   const [brain, setBrain] = useState<Brain | null>(null)
@@ -50,6 +52,9 @@ export default function App() {
   const [cardsError, setCardsError] = useState("")
   const [chats, setChats] = useState<ChatIndex | null>(null)
   const [briefs, setBriefs] = useState<BriefBoard | null>(null)
+  const [config, setConfig] = useState<ConfigBoard | null>(null)
+  const [configLoading, setConfigLoading] = useState(false)
+  const [configError, setConfigError] = useState("")
 
   useEffect(() => {
     if (!window.location.hash) history.replaceState(null, "", "#/skills")
@@ -214,6 +219,26 @@ export default function App() {
       })
       .finally(() => {
         if (!cancel) setCardsLoading(false)
+      })
+    return () => {
+      cancel = true
+    }
+  }, [refreshKey, view])
+
+  useEffect(() => {
+    if (!refreshKey || view !== "config") return
+    let cancel = false
+    setConfigLoading(true)
+    setConfigError("")
+    fetchConfig()
+      .then((data) => {
+        if (!cancel) setConfig(data)
+      })
+      .catch((reason: unknown) => {
+        if (!cancel) setConfigError(reason instanceof Error ? reason.message : "MicroStation configuration is not ready.")
+      })
+      .finally(() => {
+        if (!cancel) setConfigLoading(false)
       })
     return () => {
       cancel = true
@@ -461,6 +486,19 @@ export default function App() {
               focus={focus}
               onOpenProject={openOnMap}
               onOpenFile={(id) => setSelection({ kind: "file", id })}
+              onOpenConfig={() => go("config")}
+            />
+          )}
+          {view === "config" && (
+            <ConfigView
+              brain={brain}
+              data={config}
+              loading={configLoading}
+              error={configError}
+              query={query}
+              focus={focus}
+              onOpenProject={openOnMap}
+              onOpenFile={(id) => setSelection({ kind: "file", id })}
             />
           )}
         </div>
@@ -474,6 +512,7 @@ export default function App() {
         onOpenFile={(id) => setSelection({ kind: "file", id })}
         onFocus={setFocus}
         onViewBlueprint={() => go("blueprint")}
+        onOpenConfig={() => go("config")}
       />
       <nav className="tabbar">
         {VIEWS.map((item) => (
@@ -518,7 +557,7 @@ function chooseHit(
   if (hit.kind === "file") go("system")
   if (hit.kind === "project") {
     setFocus(hit.id)
-    go("blueprint")
+    go(hit.view || "blueprint")
   }
 }
 
@@ -533,6 +572,12 @@ function searchHits(brain: Brain, query: string): Hit[] {
     for (const keyin of project.microstation?.keyins ?? []) {
       if (matchesQuery(q, `${keyin.keyin} ${keyin.function} ${keyin.rel}`)) {
         hits.push({ kind: "project", id: project.id, label: keyin.keyin, meta: `${project.name} key-in` })
+      }
+    }
+    for (const unit of project.microstation_config?.units ?? []) {
+      const vars = unit.variables.map((item) => `${item.name} ${item.value}`).join(" ")
+      if (matchesQuery(q, `${unit.name} ${unit.workspace} ${vars}`)) {
+        hits.push({ kind: "project", id: project.id, label: unit.name, meta: `${project.name} config`, view: "config" })
       }
     }
   }
@@ -619,6 +664,14 @@ function Icon({ name }: { name: View }) {
       <svg viewBox="0 0 24 24" aria-hidden>
         <rect x="4" y="5" width="16" height="15" rx="2" />
         <path d="M8 3v4M16 3v4M4 10h16M8 14h8M8 17h5" />
+      </svg>
+    )
+  }
+  if (name === "config") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden>
+        <path d="M5 7h14M5 12h14M5 17h9" />
+        <circle cx="16" cy="17" r="2" />
       </svg>
     )
   }
