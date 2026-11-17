@@ -30,6 +30,20 @@ body {
 button, input { font: inherit; color: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: wait; opacity: 0.6; }
+.graph-3d { position: relative; width: 100%; height: 100%; min-height: 300px; }
+.graph-3d-legend { position: absolute; bottom: 12px; left: 16px; pointer-events: none; font: 11px var(--mono); color: var(--mint); background: rgba(5,12,8,.86); padding: 8px; border-radius: 6px; }
+.knowledge-view { overflow: auto; padding: 20px; }
+.knowledge-view h1, .knowledge-view h2 { font-family: var(--display); }
+.knowledge-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.knowledge-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 15px; margin: 10px 0; }
+.knowledge-card button { margin: 4px; }
+.knowledge-card textarea, .knowledge-card input, .knowledge-card select { display: block; width: 100%; margin: 10px 0; padding: 10px; background: var(--bg-2); color: var(--mint); border: 1px solid var(--line); border-radius: 6px; font: 13px var(--sans); }
+.knowledge-card textarea { font-family: var(--mono); }
+.knowledge-previous { max-height: 230px; overflow: auto; white-space: pre-wrap; font: 11px var(--mono); }
+.knowledge-warning { color: var(--gold); }
+.ask-evidence { display: grid; gap: 5px; margin: 8px 0; max-height: 140px; overflow: auto; }
+.ask-evidence button { background: rgba(61,255,154,.06); border: 1px solid var(--line); text-align: left; padding: 5px; font-size: 11px; }
+@media (max-width: 760px) { .knowledge-grid { grid-template-columns: 1fr; } }
 
 .app {
   height: 100%;

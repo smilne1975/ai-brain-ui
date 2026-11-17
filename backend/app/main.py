@@ -7,6 +7,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +21,7 @@ from backend.app.digest import build_digest, digest_mode, export_digest, write_s
 from backend.app.ask import answer
 from backend.app.engine import Engine, Hub
 from backend.app.llm import resolve_provider
+from backend.app import knowledge
 from backend.app.microstation import build_microstation
 from backend.app.microstation_config import build_config
 from backend.app.mcp_rpc import dispatch
@@ -49,6 +51,26 @@ code { color: #3dff9a; }
 class AskBody(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     project_id: str | None = None
+
+
+class PageBody(BaseModel):
+    content: str = Field(min_length=3, max_length=30000)
+    expected_revision: str | None = None
+    expected_sources: dict[str, str]
+
+
+class SkillBody(BaseModel):
+    project_id: str
+    name: str = Field(min_length=2, max_length=80)
+    description: str = Field(min_length=2, max_length=250)
+    steps: str = Field(min_length=3, max_length=10000)
+
+
+class AnswerBody(BaseModel):
+    project_id: str
+    title: str = Field(min_length=2, max_length=120)
+    answer: str = Field(min_length=2, max_length=10000)
+    source_ids: list[str] = Field(min_length=1, max_length=8)
 
 
 def create_app() -> FastAPI:
@@ -238,7 +260,68 @@ def create_app() -> FastAPI:
     def ask(body: AskBody):
         engine: Engine = app.state.engine
         brain = _require_brain(engine)
-        return answer(brain, body.question, body.project_id, resolve_provider())
+        if body.project_id and body.project_id not in {"all", "corpus"} and body.project_id not in {p["id"] for p in brain["projects"]}:
+            raise HTTPException(status_code=404, detail="Folder is not in the scan")
+        return answer(brain, body.question, body.project_id, resolve_provider(), knowledge.pages(engine.root, brain))
+
+    @app.get("/api/knowledge")
+    def knowledge_index():
+        engine: Engine = app.state.engine
+        brain = _require_brain(engine)
+        return {"pages": knowledge.pages(engine.root, brain), "answers": knowledge.answers(engine.root, brain),
+                "findings": knowledge.lint(engine.root, brain),
+                "workflow_candidates": knowledge.workflow_candidates(brain, load_chats(engine.root, brain))}
+
+    @app.post("/api/answers")
+    def save_reviewed_answer(body: AnswerBody, request: Request):
+        _require_local_origin(request)
+        engine: Engine = app.state.engine
+        brain = _require_brain(engine)
+        try:
+            return knowledge.save_answer(engine.root, brain, body.project_id, body.title, body.answer, body.source_ids)
+        except StopIteration:
+            raise HTTPException(status_code=404, detail="Folder is not in the scan") from None
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        except FileExistsError:
+            raise HTTPException(status_code=409, detail="Saved answer already exists; nothing was overwritten") from None
+
+    @app.get("/api/knowledge/{project_id}/preview")
+    def knowledge_preview(project_id: str):
+        engine: Engine = app.state.engine
+        brain = _require_brain(engine)
+        try:
+            return knowledge.preview(engine.root, brain, project_id)
+        except StopIteration:
+            raise HTTPException(status_code=404, detail="Folder is not in the scan") from None
+
+    @app.post("/api/knowledge/{project_id}/approve")
+    def knowledge_approve(project_id: str, body: PageBody, request: Request):
+        _require_local_origin(request)
+        engine: Engine = app.state.engine
+        brain = _require_brain(engine)
+        try:
+            return knowledge.approve(engine.root, brain, project_id, body.content, body.expected_revision, body.expected_sources)
+        except StopIteration:
+            raise HTTPException(status_code=404, detail="Folder is not in the scan") from None
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail="Could not save the reviewed page") from exc
+
+    @app.post("/api/skills/reviewed")
+    def reviewed_skill(body: SkillBody, request: Request):
+        _require_local_origin(request)
+        engine: Engine = app.state.engine
+        brain = _require_brain(engine)
+        try:
+            return knowledge.save_skill(engine.root, brain, body.project_id, body.name, body.description, body.steps)
+        except StopIteration:
+            raise HTTPException(status_code=404, detail="Folder is not in the scan") from None
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        except FileExistsError:
+            raise HTTPException(status_code=409, detail="Skill already exists; existing content was not replaced") from None
 
     @app.get("/api/file")
     def read_file(file_id: str):
@@ -333,6 +416,16 @@ def _require_brain(engine: Engine) -> dict:
     if engine.phase in {"scanning", "starting"}:
         raise HTTPException(status_code=503, detail="Still scanning this folder.")
     raise HTTPException(status_code=404, detail=engine.error or "Not scanned")
+
+
+def _require_local_origin(request: Request) -> None:
+    """Block cross-site browser writes to the local, unauthenticated server."""
+    origin = request.headers.get("origin")
+    if not origin:
+        return  # local CLI and same-origin requests that omit Origin
+    parsed = urlparse(origin)
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        raise HTTPException(status_code=403, detail="Knowledge writes require a local page")
 
 
 def _spa(full_path: str):

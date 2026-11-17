@@ -2,7 +2,7 @@
 
 A local mission-control view of a messy folder of AI and coding projects: markdown notes, Python scripts, configs, and half-finished Copilot experiments. It scans the folder on your machine, then draws how the work connects.
 
-Nine views:
+Ten views:
 
 - **Skills** — radial map of capabilities detected in the files
 - **Blueprint** — flowchart of each folder (and of the whole corpus), with an ask bar. This is the map.
@@ -13,8 +13,19 @@ Nine views:
 - **Cards** — one plain-English status card per folder
 - **Digest** — today or this week across every folder
 - **Config** — MicroStation WorkSpaces, WorkSets, and legacy project files (press `9`)
+- **Knowledge** — preview and approve local project knowledge pages; check stale sources and broken links (press `0`)
 
 Nothing is uploaded. The app binds to `127.0.0.1`.
+
+## 3D graph and reviewed knowledge (preview)
+
+In **Blueprint**, choose **3D** to orbit, zoom and click the existing project graph. The 2D view remains the default. Filters and search apply to both views. The 3D display is capped at 180 nodes and 400 links, and reports when it has omitted nodes. It is rendered in the browser after the 3D button is clicked; it does not fetch models or send files to a service. Graph contents come from the same scan as Blueprint, plus any approved project knowledge pages.
+
+The **Knowledge** tab offers a local, deterministic *project-level* draft based on indexed file summaries. Review and edit the text, then approve explicitly. Approved Markdown revisions and source hashes live under the scanned root's `.brain/knowledge/`; originals are never edited. Changing a source flags its page. *Run checks* reports changed sources and unresolved `[[links]]`; it does not prove that the source text is true or automatically settle conflicting claims. A project page is an initial implementation, not yet a full multi-topic wiki or automatic knowledge synthesis.
+
+The Blueprint Ask bar can show matched passages from multiple projects, with source-file links, and warns when the scan hit its file cap. Its existing optional cloud-model answer still uses the configured provider; indexed content sent to it follows the existing redaction rules. **Save answer** creates a source-linked Markdown note in `.brain/answers/` after a user action; the Knowledge tab flags answers whose source files have changed. This does not yet support private-folder rules or external Obsidian/OneNote ingestion.
+
+The Knowledge tab also finds repeated, project-scoped Copilot prompts as *possible* workflows. You must provide and review the steps before **Save reviewed skill** writes `.brain/skills/<project>/<name>/SKILL.md`. Saving does not install or run the skill in any agent. All knowledge-writing routes reject browser requests originating outside localhost. The reviewed Markdown is still data: do not treat text found in project files as instructions for an agent.
 
 ## Windows — one command
 
