@@ -24,6 +24,10 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.casefold()).strip("-")[:64] or "page"
 
 
+def _page_id(project_id: str, topic: str | None) -> str:
+    return project_id if not topic else f"{project_id}~{_slug(topic)}"
+
+
 def _manifest(root: Path) -> dict:
     try:
         data = json.loads((_home(root) / "manifest.json").read_text(encoding="utf-8"))
@@ -53,8 +57,11 @@ def _fingerprint(root: Path, rec: dict) -> str | None:
         return None
 
 
-def _sources(root: Path, brain: dict, project_id: str) -> list[dict]:
+def _sources(root: Path, brain: dict, project_id: str, source_ids: list[str] | None = None) -> list[dict]:
     records = [rec for rec in brain["files"] if rec["project_id"] == project_id and not rec.get("env_class")]
+    if source_ids is not None:
+        allowed = set(source_ids)
+        records = [rec for rec in records if rec["id"] in allowed]
     # Keep the first draft bounded and prefer documentation and entry points.
     records.sort(key=lambda rec: (not (rec["rel"].lower().endswith(".md") or rec.get("entry")), rec["rel"]))
     return [dict(id=rec["id"], rel=rec["rel"], sha256=hash_value, summary=redact(rec["summary"]))
@@ -65,38 +72,47 @@ def _project(brain: dict, project_id: str) -> dict:
     return next(project for project in brain["projects"] if project["id"] == project_id)
 
 
-def preview(root: Path, brain: dict, project_id: str) -> dict:
+def preview(root: Path, brain: dict, project_id: str, topic: str | None = None,
+            source_ids: list[str] | None = None) -> dict:
     project = _project(brain, project_id)
-    sources = _sources(root, brain, project_id)
-    lines = [f"# {project['name']}", "", redact(project["summary"]), "", "## Source files", ""]
+    topic = topic.strip()[:80] if topic else None
+    key = _page_id(project_id, topic)
+    sources = _sources(root, brain, project_id, source_ids)
+    title = topic or project["name"]
+    lines = [f"# {redact(title)}", ""]
+    if not topic:
+        lines += [redact(project["summary"]), ""]
+    lines += ["## Source files", ""]
     lines += [f"- `{item['rel']}` — {item['summary']}" for item in sources]
     if not sources:
         lines += ["No readable indexed source files; this page should not be approved."]
     lines += ["", "## Open questions", "", "- What should be verified before relying on this summary?", ""]
     content = "\n".join(lines)
-    current = _manifest(root).get(project_id)
+    current = _manifest(root).get(key)
     previous_content = ""
     if current and re.fullmatch(r"[0-9a-f]{16}", str(current.get("revision", ""))):
         try:
-            previous_content = (_home(root) / _slug(project_id) / f"{current['revision']}.md").read_text(encoding="utf-8")
+            previous_content = (_home(root) / _slug(key) / f"{current['revision']}.md").read_text(encoding="utf-8")
         except OSError:
             pass
     old_sources = {item["id"]: item["sha256"] for item in (current or {}).get("sources", [])}
     changed = [item["id"] for item in sources if old_sources.get(item["id"]) != item["sha256"]]
     missing = [key for key in old_sources if key not in {item["id"] for item in sources}]
-    return {"project_id": project_id, "title": project["name"], "content": content,
+    return {"project_id": project_id, "page_id": key, "topic": topic, "source_ids": source_ids,
+            "title": title, "content": content,
             "previous_content": previous_content,
             "sources": sources, "changed_sources": changed, "missing_sources": missing,
             "current_revision": (current or {}).get("revision"), "warning": "Project scan reached its file cap" if brain.get("truncated") else ""}
 
 
 def approve(root: Path, brain: dict, project_id: str, content: str, expected_revision: str | None,
-            expected_sources: dict[str, str] | None = None) -> dict:
-    draft = preview(root, brain, project_id)
+            expected_sources: dict[str, str] | None = None, topic: str | None = None,
+            source_ids: list[str] | None = None) -> dict:
+    draft = preview(root, brain, project_id, topic, source_ids)
     if not draft["sources"]:
         raise ValueError("No readable indexed sources for this project")
     manifest = _manifest(root)
-    current = manifest.get(project_id)
+    current = manifest.get(draft["page_id"])
     if (current or {}).get("revision") != expected_revision:
         raise ValueError("The page changed since the preview; review it again")
     actual_sources = {item["id"]: item["sha256"] for item in draft["sources"]}
@@ -107,23 +123,25 @@ def approve(root: Path, brain: dict, project_id: str, content: str, expected_rev
         raise ValueError("Page must have a title and be at most 30,000 characters")
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     revision = hashlib.sha256((safe + now).encode()).hexdigest()[:16]
-    folder = _home(root) / _slug(project_id)
+    folder = _home(root) / _slug(draft["page_id"])
     folder.mkdir(parents=True, exist_ok=True)
     filename = f"{revision}.md"
     # Never overwrite: even simultaneous approvals must not erase a revision.
     (folder / filename).open("x", encoding="utf-8").write(safe + "\n")
-    manifest[project_id] = {"title": draft["title"], "project_id": project_id,
+    manifest[draft["page_id"]] = {"title": draft["title"], "project_id": project_id,
+                            "page_id": draft["page_id"], "topic": draft["topic"],
                             "revision": revision, "revisions": (current or {}).get("revisions", []) + [revision],
                             "sources": draft["sources"], "updated_at": now}
     _save_manifest(root, manifest)
-    return manifest[project_id]
+    return manifest[draft["page_id"]]
 
 
 def pages(root: Path, brain: dict) -> list[dict]:
     manifest = _manifest(root)
     records = {rec["id"]: rec for rec in brain["files"]}
     result = []
-    for pid, page in manifest.items():
+    for key, page in manifest.items():
+        pid = page.get("project_id", key)
         if not any(project["id"] == pid for project in brain["projects"]):
             continue
         if not re.fullmatch(r"[0-9a-f]{16}", str(page.get("revision", ""))):
@@ -133,12 +151,12 @@ def pages(root: Path, brain: dict) -> list[dict]:
             rec = records.get(src["id"])
             if rec is None or _fingerprint(root, rec) != src["sha256"]:
                 stale.append(src["id"])
-        file = _home(root) / _slug(pid) / f"{page['revision']}.md"
+        file = _home(root) / _slug(key) / f"{page['revision']}.md"
         try:
             content = file.read_text(encoding="utf-8")
         except OSError:
             content = ""
-        result.append({**page, "content": content, "stale_sources": stale})
+        result.append({**page, "page_id": key, "content": content, "stale_sources": stale})
     return result
 
 
@@ -146,6 +164,8 @@ def lint(root: Path, brain: dict) -> list[dict]:
     findings = []
     all_pages = pages(root, brain)
     titles = {_slug(page["title"]) for page in all_pages}
+    content_seen: dict[str, dict] = {}
+    inbound = {_slug(page["title"]): 0 for page in all_pages}
     for page in all_pages:
         pid = page["project_id"]
         if not page["content"]:
@@ -155,6 +175,28 @@ def lint(root: Path, brain: dict) -> list[dict]:
         for link in re.findall(r"\[\[([^\]|#]+)", page["content"]):
             if _slug(link) not in titles:
                 findings.append({"project_id": pid, "kind": "broken_link", "detail": f"Unresolved link: [[{link}]]"})
+            elif _slug(link) != _slug(page["title"]):
+                inbound[_slug(link)] += 1
+        normalized = re.sub(r"\s+", " ", page["content"].casefold()).strip()
+        if normalized and normalized in content_seen:
+            other = content_seen[normalized]
+            findings.append({"project_id": pid, "kind": "duplicate", "detail": f"Same content as {other['project_id']}/{other['title']}"})
+        else:
+            content_seen[normalized] = page
+        for quote, rel in re.findall(r'^>\s*"([^"\n]+)"\s*[-–—]\s*`?([^`\n]+\.md)`?\s*$', page["content"], re.M):
+            rec = next((rec for rec in brain["files"] if rec["project_id"] == pid and rec["rel"] == rel), None)
+            path = _resolve_under_root(root, rec) if rec and not rec.get("env_class") else None
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace") if path and path.stat().st_size <= 350_000 else ""
+            except OSError:
+                text = ""
+            if not text or " ".join(quote.split()) not in " ".join(text.split()):
+                findings.append({"project_id": pid, "kind": "unverified_quote", "detail": f"Quote not found in {rel}: {quote[:60]}"})
+    if len(all_pages) > 1:
+        for page in all_pages:
+            if page.get("topic") and not inbound.get(_slug(page["title"]), 0):
+                findings.append({"project_id": page["project_id"], "kind": "orphan",
+                                 "detail": f"No page links to topic: {page['title']}"})
     return findings
 
 

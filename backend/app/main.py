@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -51,12 +51,15 @@ code { color: #3dff9a; }
 class AskBody(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     project_id: str | None = None
+    project_ids: list[str] | None = Field(default=None, max_length=200)
 
 
 class PageBody(BaseModel):
     content: str = Field(min_length=3, max_length=30000)
     expected_revision: str | None = None
     expected_sources: dict[str, str]
+    topic: str | None = Field(default=None, max_length=80)
+    source_ids: list[str] | None = Field(default=None, max_length=20)
 
 
 class SkillBody(BaseModel):
@@ -262,7 +265,10 @@ def create_app() -> FastAPI:
         brain = _require_brain(engine)
         if body.project_id and body.project_id not in {"all", "corpus"} and body.project_id not in {p["id"] for p in brain["projects"]}:
             raise HTTPException(status_code=404, detail="Folder is not in the scan")
-        return answer(brain, body.question, body.project_id, resolve_provider(), knowledge.pages(engine.root, brain))
+        if body.project_ids is not None and any(pid not in {p["id"] for p in brain["projects"]} for pid in body.project_ids):
+            raise HTTPException(status_code=404, detail="A selected folder is not in the scan")
+        return answer(brain, body.question, body.project_id, resolve_provider(), knowledge.pages(engine.root, brain),
+                      knowledge.answers(engine.root, brain), body.project_ids)
 
     @app.get("/api/knowledge")
     def knowledge_index():
@@ -287,11 +293,11 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=409, detail="Saved answer already exists; nothing was overwritten") from None
 
     @app.get("/api/knowledge/{project_id}/preview")
-    def knowledge_preview(project_id: str):
+    def knowledge_preview(project_id: str, topic: str | None = None, source_ids: list[str] | None = Query(default=None)):
         engine: Engine = app.state.engine
         brain = _require_brain(engine)
         try:
-            return knowledge.preview(engine.root, brain, project_id)
+            return knowledge.preview(engine.root, brain, project_id, topic, source_ids)
         except StopIteration:
             raise HTTPException(status_code=404, detail="Folder is not in the scan") from None
 
@@ -301,7 +307,8 @@ def create_app() -> FastAPI:
         engine: Engine = app.state.engine
         brain = _require_brain(engine)
         try:
-            return knowledge.approve(engine.root, brain, project_id, body.content, body.expected_revision, body.expected_sources)
+            return knowledge.approve(engine.root, brain, project_id, body.content, body.expected_revision, body.expected_sources,
+                                     body.topic, body.source_ids)
         except StopIteration:
             raise HTTPException(status_code=404, detail="Folder is not in the scan") from None
         except ValueError as exc:

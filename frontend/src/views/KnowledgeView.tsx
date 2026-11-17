@@ -8,18 +8,21 @@ export function KnowledgeView({ brain, focus }: { brain: Brain; focus: string | 
   const [content, setContent] = useState("")
   const [message, setMessage] = useState("")
   const [skill, setSkill] = useState({ project_id: "", name: "", description: "", steps: "" })
+  const [topicProject, setTopicProject] = useState("")
+  const [topic, setTopic] = useState("")
+  const [topicSources, setTopicSources] = useState<string[]>([])
   useEffect(() => { void fetchKnowledge().then(setIndex).catch((err: Error) => setMessage(err.message)) }, [brain.scanned_at])
 
   const visible = brain.projects.filter((project) => !focus || project.id === focus)
-  async function load(id: string) {
-    try { const next = await previewKnowledge(id); setDraft(next); setContent(next.content); setMessage("") }
+  async function load(id: string, pageTopic?: string, sourceIds?: string[]) {
+    try { const next = await previewKnowledge(id, pageTopic, sourceIds); setDraft(next); setContent(next.content); setMessage("") }
     catch (err) { setMessage(err instanceof Error ? err.message : "Could not preview") }
   }
   async function approve() {
     if (!draft || !window.confirm(`Save reviewed knowledge for ${draft.title}? Source files will not change.`)) return
     try {
       await approveKnowledge(draft.project_id, content, draft.current_revision,
-        Object.fromEntries(draft.sources.map((source) => [source.id, source.sha256])))
+        Object.fromEntries(draft.sources.map((source) => [source.id, source.sha256])), draft.topic, draft.source_ids)
       setIndex(await fetchKnowledge()); setDraft(null); setMessage("Reviewed page saved as a new immutable revision.")
     } catch (err) { setMessage(err instanceof Error ? err.message : "Could not save") }
   }
@@ -31,12 +34,26 @@ export function KnowledgeView({ brain, focus }: { brain: Brain; focus: string | 
     <div className="knowledge-grid">
       <section><h2>Project pages</h2>
         {visible.map((project) => {
-          const page = index?.pages.find((item) => item.project_id === project.id)
+          const page = index?.pages.find((item) => item.project_id === project.id && !item.topic)
+          const topics = index?.pages.filter((item) => item.project_id === project.id && item.topic) ?? []
           return <div key={project.id} className="knowledge-card">
             <strong>{project.name}</strong> <span className="quiet">{page ? `${page.revisions.length} version(s)` : "not created"}</span>
             {page?.stale_sources.length ? <p className="knowledge-warning">{page.stale_sources.length} source(s) changed or missing</p> : null}
             <p>{page?.content.slice(0, 220) || project.summary}</p>
             <button type="button" className="ghost" onClick={() => void load(project.id)}>{page ? "Review update" : "Preview page"}</button>
+            {topics.map((item) => <div key={item.page_id}><button type="button" className="ghost"
+              onClick={() => void load(project.id, item.topic, item.sources.map((source) => source.id))}>
+              {item.title}{item.stale_sources.length ? " · needs recheck" : ""}</button></div>)}
+            <button type="button" className="ghost" onClick={() => { setTopicProject(project.id); setTopic(""); setTopicSources([]) }}>New topic page</button>
+            {topicProject === project.id && <div className="knowledge-topic">
+              <input aria-label="Topic title" placeholder="Topic, e.g. level export" value={topic} onChange={(e) => setTopic(e.target.value)} />
+              <p className="quiet">Choose source files for this topic:</p>
+              <div className="knowledge-source-list">{brain.files.filter((file) => file.project_id === project.id && !file.env_class).map((file) =>
+                <label key={file.id}><input type="checkbox" checked={topicSources.includes(file.id)} onChange={(e) =>
+                  setTopicSources((before) => e.target.checked ? [...before, file.id] : before.filter((id) => id !== file.id))} />{file.rel}</label>)}</div>
+              <button type="button" className="primary" disabled={!topic.trim() || !topicSources.length}
+                onClick={() => void load(project.id, topic, topicSources)}>Preview topic</button>
+            </div>}
           </div>
         })}
       </section>

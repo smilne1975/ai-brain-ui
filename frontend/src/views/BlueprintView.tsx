@@ -31,6 +31,7 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect, onOpenKn
   const [askError, setAskError] = useState("")
   const [dimension, setDimension] = useState<"2d" | "3d">("2d")
   const [saved, setSaved] = useState("")
+  const [selectedProjects, setSelectedProjects] = useState<string[]>([])
   const [knowledgePages, setKnowledgePages] = useState<KnowledgePage[]>([])
 
   useEffect(() => {
@@ -46,21 +47,21 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect, onOpenKn
     const sourceNodes = (graph?.nodes ?? []).filter((node) => !activeFilter.kinds || activeFilter.kinds.has(node.kind))
     const pageNodes = knowledgePages.filter((page) => (!focus || page.project_id === focus) &&
       (!activeFilter.kinds || activeFilter.kinds.has("note"))).map((page) => ({
-        id: `knowledge:${page.project_id}`, label: `${page.title} knowledge`, sub: page.stale_sources.length ? "Needs recheck" : "Approved page",
+        id: `knowledge:${page.page_id}`, label: `${page.title} knowledge`, sub: page.stale_sources.length ? "Needs recheck" : "Approved page",
         kind: "note", project_id: page.project_id, file_id: null, service_id: null,
       }))
     sourceNodes.push(...pageNodes)
     const ids = new Set(sourceNodes.map((node) => node.id))
     const sourceEdges = (graph?.edges ?? []).filter((edge) => ids.has(edge.source) && ids.has(edge.target))
     for (const page of knowledgePages) {
-      if (!ids.has(`knowledge:${page.project_id}`)) continue
+      if (!ids.has(`knowledge:${page.page_id}`)) continue
       const projectNode = (graph?.nodes ?? []).find((node) => node.kind === "project" && node.project_id === page.project_id)
-      if (projectNode && ids.has(projectNode.id)) sourceEdges.push({ id: `knowledge-edge:${page.project_id}`, source: projectNode.id,
-        target: `knowledge:${page.project_id}`, label: "knowledge" })
+      if (projectNode && ids.has(projectNode.id)) sourceEdges.push({ id: `knowledge-edge:${page.page_id}`, source: projectNode.id,
+        target: `knowledge:${page.page_id}`, label: "knowledge" })
       for (const source of page.sources) {
         const fileNode = (graph?.nodes ?? []).find((node) => node.file_id === source.id)
-        if (fileNode && ids.has(fileNode.id)) sourceEdges.push({ id: `knowledge-source:${page.project_id}:${source.id}`,
-          source: fileNode.id, target: `knowledge:${page.project_id}`, label: "cites" })
+        if (fileNode && ids.has(fileNode.id)) sourceEdges.push({ id: `knowledge-source:${page.page_id}:${source.id}`,
+          source: fileNode.id, target: `knowledge:${page.page_id}`, label: "cites" })
       }
     }
     return { nodes: sourceNodes, edges: sourceEdges }
@@ -82,7 +83,7 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect, onOpenKn
     setAskError("")
     setSaved("")
     try {
-      setReply(await ask(text, focus))
+      setReply(await ask(text, focus, focus ? undefined : selectedProjects))
     } catch (error) {
       setReply(null)
       setAskError(error instanceof Error ? error.message : "The question could not be answered.")
@@ -178,6 +179,11 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect, onOpenKn
           ))}
         </div>
         <div className="ask-row">
+          {!focus && <details className="ask-scope"><summary>{selectedProjects.length ? `${selectedProjects.length} projects` : "All projects"}</summary>
+            <div className="ask-scope-list">{brain.projects.map((project) => <label key={project.id}>
+              <input type="checkbox" checked={selectedProjects.includes(project.id)} onChange={(event) =>
+                setSelectedProjects((before) => event.target.checked ? [...before, project.id] : before.filter((id) => id !== project.id))} />
+              {project.name}</label>)}</div></details>}
           <input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}

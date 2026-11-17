@@ -17,7 +17,8 @@ _STOP = {
 }
 
 
-def answer(brain: dict, question: str, project_id: str | None, provider: dict | None, pages: list[dict] | None = None) -> dict:
+def answer(brain: dict, question: str, project_id: str | None, provider: dict | None, pages: list[dict] | None = None,
+           saved_answers: list[dict] | None = None, project_ids: list[str] | None = None) -> dict:
     question = redact(question.strip())[:2000]
     if not question:
         return {
@@ -25,7 +26,7 @@ def answer(brain: dict, question: str, project_id: str | None, provider: dict | 
             "citations": [],
             "provider": "heuristic",
         }
-    projects = _scoped_projects(brain, project_id)
+    projects = _scoped_projects(brain, project_id, project_ids)
     files = [f for f in brain["files"] if f["project_id"] in {p["id"] for p in projects}]
     heuristic = _heuristic(brain, question, projects, files)
     q = _tokens(question)
@@ -39,10 +40,17 @@ def answer(brain: dict, question: str, project_id: str | None, provider: dict | 
         evidence.append({**_cite(rec, names), "excerpt": (rec.get("excerpt") or rec["summary"])[:320]})
     matching_pages = [page for page in (pages or []) if page["project_id"] in names and
                       _score(q, page["title"] + " " + page["content"][:1200]) > 0]
+    matching_answers = [item for item in (saved_answers or []) if item["project_id"] in names and
+                        _score(q, item["name"] + " " + item["content"][:1200]) > 0]
     for page in matching_pages[:3]:
         evidence.append({"id": f"knowledge:{page['project_id']}", "label": f"{names[page['project_id']]}/approved knowledge",
                          "kind": "knowledge", "project_id": page["project_id"],
                          "excerpt": page["content"][:320], "stale": bool(page["stale_sources"])})
+    for saved in matching_answers[:3]:
+        evidence.append({"id": f"answer:{saved['project_id']}:{saved['name']}",
+                         "label": f"{names[saved['project_id']]}/saved answer/{saved['name']}",
+                         "kind": "answer", "project_id": saved["project_id"],
+                         "excerpt": saved["content"][:320], "stale": bool(saved["stale_sources"])})
     heuristic["evidence"] = evidence
     heuristic["scope"] = list(names)
     heuristic["incomplete"] = bool(brain.get("truncated"))
@@ -51,6 +59,9 @@ def answer(brain: dict, question: str, project_id: str | None, provider: dict | 
     elif matching_pages and not any(item["kind"] == "file" for item in evidence):
         page = matching_pages[0]
         heuristic["answer"] = ("Approved knowledge (needs recheck): " if page["stale_sources"] else "Approved knowledge: ") + page["content"][:500]
+    elif matching_answers and not any(item["kind"] == "file" for item in evidence):
+        saved = matching_answers[0]
+        heuristic["answer"] = ("Saved answer (needs recheck): " if saved["stale_sources"] else "Saved answer: ") + saved["content"][:500]
     if not provider:
         return heuristic
     if not evidence:
@@ -60,6 +71,9 @@ def answer(brain: dict, question: str, project_id: str | None, provider: dict | 
         for page in matching_pages[:2]:
             if not page["stale_sources"]:
                 packed += f"\n\n# Reviewed knowledge {page['project_id']}\n{page['content'][:1200]}"
+        for saved in matching_answers[:2]:
+            if not saved["stale_sources"]:
+                packed += f"\n\n# Reviewed answer {saved['project_id']}\n{saved['content'][:900]}"
         text = complete(
             provider,
             (
@@ -85,11 +99,13 @@ def answer(brain: dict, question: str, project_id: str | None, provider: dict | 
         return heuristic
 
 
-def _scoped_projects(brain: dict, project_id: str | None) -> list[dict]:
+def _scoped_projects(brain: dict, project_id: str | None, project_ids: list[str] | None = None) -> list[dict]:
     if project_id and project_id not in {"corpus", "all"}:
         chosen = [p for p in brain["projects"] if p["id"] == project_id]
         if chosen:
             return chosen
+    if project_ids:
+        return [p for p in brain["projects"] if p["id"] in project_ids]
     return list(brain["projects"])
 
 
@@ -149,8 +165,11 @@ def _todos(projects: list[dict], files: list[dict]) -> dict:
 def _service_answer(service: dict, projects: list[dict], brain: dict) -> dict:
     names = {p["id"]: p["name"] for p in brain["projects"]}
     folders = [names[pid] for pid in service["projects"] if pid in names and any(p["id"] == pid for p in projects)]
-    if service["status"] == "connected":
-        key_bits = [e["how"] for e in service["evidence"] if e["how"].startswith("env key")]
+    selected = {p["id"] for p in projects}
+    if not folders:
+        status = f"{service['name']} does not appear in the selected projects."
+    elif any(pid in selected for pid in service.get("live_projects") or []):
+        key_bits = [e["how"] for e in service["evidence"] if e["project_id"] in selected and e["how"].startswith("env key")]
         key_text = f" {key_bits[0]}." if key_bits else ""
         status = f"{service['name']} is connected.{key_text}"
     elif service["status"] == "referenced":
@@ -163,7 +182,7 @@ def _service_answer(service: dict, projects: list[dict], brain: dict) -> dict:
         body = status
     citations = []
     for item in service["evidence"]:
-        if item["project_id"] not in names:
+        if item["project_id"] not in names or not any(p["id"] == item["project_id"] for p in projects):
             continue
         citations.append(
             {

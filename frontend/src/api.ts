@@ -97,11 +97,11 @@ async function readDetail(res: Response, fallback: string): Promise<string> {
   return fallback
 }
 
-export async function ask(question: string, projectId: string | null): Promise<AskResponse> {
+export async function ask(question: string, projectId: string | null, projectIds?: string[]): Promise<AskResponse> {
   const res = await fetch("/api/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, project_id: projectId }),
+    body: JSON.stringify({ question, project_id: projectId, project_ids: projectIds }),
   })
   if (!res.ok) throw new Error("The question could not be answered.")
   return res.json() as Promise<AskResponse>
@@ -113,15 +113,19 @@ export async function fetchKnowledge(): Promise<KnowledgeIndex> {
   return res.json() as Promise<KnowledgeIndex>
 }
 
-export async function previewKnowledge(id: string): Promise<KnowledgePreview> {
-  const res = await fetch(`/api/knowledge/${encodeURIComponent(id)}/preview`)
+export async function previewKnowledge(id: string, topic?: string, sourceIds?: string[]): Promise<KnowledgePreview> {
+  const search = new URLSearchParams()
+  if (topic) search.set("topic", topic)
+  for (const sourceId of sourceIds ?? []) search.append("source_ids", sourceId)
+  const res = await fetch(`/api/knowledge/${encodeURIComponent(id)}/preview?${search}`)
   if (!res.ok) throw new Error(await readDetail(res, "Could not preview project knowledge."))
   return res.json() as Promise<KnowledgePreview>
 }
 
-export async function approveKnowledge(id: string, content: string, expected_revision: string | null, expected_sources: Record<string, string>) {
+export async function approveKnowledge(id: string, content: string, expected_revision: string | null, expected_sources: Record<string, string>,
+  topic: string | null, source_ids: string[] | null) {
   const res = await fetch(`/api/knowledge/${encodeURIComponent(id)}/approve`, { method: "POST",
-    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, expected_revision, expected_sources }) })
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, expected_revision, expected_sources, topic, source_ids }) })
   if (!res.ok) throw new Error(await readDetail(res, "Could not save knowledge page."))
   return res.json()
 }

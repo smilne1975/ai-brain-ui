@@ -220,6 +220,9 @@ def _user_roots(scan_root: Path) -> list[Path]:
     override = os.environ.get("BRAIN_COPILOT_CHATS_ROOT", "").strip()
     if override:
         return _expand_user_root(Path(override).expanduser())
+    # Demo mode must not mix a person's actual VS Code sessions into sample data.
+    if scan_root.name == "demo-projects" and _include_samples(scan_root):
+        return _expand_user_root(SAMPLE_USER)
     found: list[Path] = []
     for base in _platform_user_dirs():
         found.extend(_expand_user_root(base))

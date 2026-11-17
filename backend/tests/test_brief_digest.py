@@ -132,7 +132,7 @@ def test_brief_llm_is_opt_in(tmp_path: Path, monkeypatch):
 
 
 def test_digest_windows_and_quiet_projects(tmp_path: Path, monkeypatch):
-    _folder(tmp_path, "live", "notes.md", "# live\n\n- TODO: ship the note\n", NOW - timedelta(hours=4))
+    _folder(tmp_path, "live", "notes.md", "# live\n\n- TODO: ship the note\n", NOW - timedelta(hours=1))
     _folder(tmp_path, "fading", "old.md", "# fading\n\n- FIXME: the index drifted\n", NOW - timedelta(days=8))
     _folder(tmp_path, "shelf", "dust.md", "# shelf\n\n- TODO: decide whether to keep this\n", NOW - timedelta(days=32))
     monkeypatch.setenv("BRAIN_COPILOT_CHATS_ROOT", str(tmp_path / "no-chats"))

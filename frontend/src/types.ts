@@ -393,9 +393,9 @@ export type AskResponse = {
 }
 
 export type KnowledgeSource = { id: string; rel: string; sha256: string; summary?: string }
-export type KnowledgePage = { project_id: string; title: string; revision: string; revisions: string[];
+export type KnowledgePage = { project_id: string; page_id: string; title: string; topic?: string; revision: string; revisions: string[];
   sources: KnowledgeSource[]; content: string; stale_sources: string[]; updated_at: string }
-export type KnowledgePreview = { project_id: string; title: string; content: string; sources: KnowledgeSource[];
+export type KnowledgePreview = { project_id: string; page_id: string; topic: string | null; source_ids: string[] | null; title: string; content: string; sources: KnowledgeSource[];
   changed_sources: string[]; missing_sources: string[]; current_revision: string | null; previous_content: string; warning: string }
 export type KnowledgeIndex = { pages: KnowledgePage[]; answers: { name: string; project_id: string; content: string;
   stale_sources: string[] }[]; findings: { project_id: string; kind: string; detail: string }[];
