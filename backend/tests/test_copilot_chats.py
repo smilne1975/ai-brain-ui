@@ -326,7 +326,8 @@ def test_demo_chats_api(tmp_path: Path, monkeypatch):
         assert inbox["summary"]
         assert any(item["name"] == "triage.py" for item in inbox["files"])
         assert "github-pr-digest" in by_id
-        timeline = client.get("/api/timeline", params={"days": 7})
+        # Sample chats are dated October; a November test run needs 30 days.
+        timeline = client.get("/api/timeline", params={"days": 30})
         assert timeline.status_code == 200
         tl = json.dumps(timeline.json())
         assert "billing threads" in tl

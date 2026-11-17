@@ -1,4 +1,4 @@
-import type { AskResponse, Brain, BrainStatus, BriefBoard, CardBoard, ChatIndex, ConfigBoard, Digest, McpDoctor, McpUsage, Timeline } from "./types"
+import type { AskResponse, Brain, BrainStatus, BriefBoard, CardBoard, ChatIndex, ConfigBoard, Digest, KnowledgeIndex, KnowledgePreview, McpDoctor, McpUsage, Timeline } from "./types"
 
 export async function fetchStatus(): Promise<BrainStatus> {
   const res = await fetch("/api/health")
@@ -97,12 +97,49 @@ async function readDetail(res: Response, fallback: string): Promise<string> {
   return fallback
 }
 
-export async function ask(question: string, projectId: string | null): Promise<AskResponse> {
+export async function ask(question: string, projectId: string | null, projectIds?: string[]): Promise<AskResponse> {
   const res = await fetch("/api/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, project_id: projectId }),
+    body: JSON.stringify({ question, project_id: projectId, project_ids: projectIds }),
   })
   if (!res.ok) throw new Error("The question could not be answered.")
   return res.json() as Promise<AskResponse>
+}
+
+export async function fetchKnowledge(): Promise<KnowledgeIndex> {
+  const res = await fetch("/api/knowledge")
+  if (!res.ok) throw new Error(await readDetail(res, "Knowledge is not ready."))
+  return res.json() as Promise<KnowledgeIndex>
+}
+
+export async function previewKnowledge(id: string, topic?: string, sourceIds?: string[]): Promise<KnowledgePreview> {
+  const search = new URLSearchParams()
+  if (topic) search.set("topic", topic)
+  for (const sourceId of sourceIds ?? []) search.append("source_ids", sourceId)
+  const res = await fetch(`/api/knowledge/${encodeURIComponent(id)}/preview?${search}`)
+  if (!res.ok) throw new Error(await readDetail(res, "Could not preview project knowledge."))
+  return res.json() as Promise<KnowledgePreview>
+}
+
+export async function approveKnowledge(id: string, content: string, expected_revision: string | null, expected_sources: Record<string, string>,
+  topic: string | null, source_ids: string[] | null) {
+  const res = await fetch(`/api/knowledge/${encodeURIComponent(id)}/approve`, { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, expected_revision, expected_sources, topic, source_ids }) })
+  if (!res.ok) throw new Error(await readDetail(res, "Could not save knowledge page."))
+  return res.json()
+}
+
+export async function saveAnswer(project_id: string, title: string, answer: string, source_ids: string[]) {
+  const res = await fetch("/api/answers", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id, title, answer, source_ids }) })
+  if (!res.ok) throw new Error(await readDetail(res, "Could not save answer."))
+  return res.json()
+}
+
+export async function saveReviewedSkill(project_id: string, name: string, description: string, steps: string) {
+  const res = await fetch("/api/skills/reviewed", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id, name, description, steps }) })
+  if (!res.ok) throw new Error(await readDetail(res, "Could not save reviewed skill."))
+  return res.json() as Promise<{ path: string; name: string }>
 }

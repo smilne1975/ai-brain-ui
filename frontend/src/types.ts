@@ -1,4 +1,4 @@
-export type View = "skills" | "blueprint" | "system" | "connections" | "copilot" | "timeline" | "cards" | "digest" | "config"
+export type View = "skills" | "blueprint" | "system" | "connections" | "copilot" | "timeline" | "cards" | "digest" | "config" | "knowledge"
 
 export type BriefTodo = { text: string; rel: string; kind: string; line?: number }
 export type BriefFile = { rel: string; file_id: string | null; why: string }
@@ -387,7 +387,19 @@ export type AskResponse = {
   answer: string
   citations: { id: string; label: string; kind: string; project_id: string }[]
   provider: string
+  evidence?: { id: string; label: string; kind: string; project_id: string; excerpt: string; stale?: boolean }[]
+  scope?: string[]
+  incomplete?: boolean
 }
+
+export type KnowledgeSource = { id: string; rel: string; sha256: string; summary?: string }
+export type KnowledgePage = { project_id: string; page_id: string; title: string; topic?: string; revision: string; revisions: string[];
+  sources: KnowledgeSource[]; content: string; stale_sources: string[]; updated_at: string }
+export type KnowledgePreview = { project_id: string; page_id: string; topic: string | null; source_ids: string[] | null; title: string; content: string; sources: KnowledgeSource[];
+  changed_sources: string[]; missing_sources: string[]; current_revision: string | null; previous_content: string; warning: string }
+export type KnowledgeIndex = { pages: KnowledgePage[]; answers: { name: string; project_id: string; content: string;
+  stale_sources: string[] }[]; findings: { project_id: string; kind: string; detail: string }[];
+  workflow_candidates: { project_id: string; name: string; count: number; examples: { session_id: string; text: string }[] }[] }
 
 export const CATEGORY_COLOR: Record<string, string> = {
   Models: "#3dff9a",

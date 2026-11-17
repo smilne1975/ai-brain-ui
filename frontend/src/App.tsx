@@ -12,6 +12,7 @@ import { DigestView } from "./views/DigestView"
 import { CopilotLinkView } from "./views/CopilotLinkView"
 import { ConfigView } from "./views/ConfigView"
 import { TimelineView } from "./views/TimelineView"
+import { KnowledgeView } from "./views/KnowledgeView"
 
 const VIEWS: { id: View; label: string; hint: string }[] = [
   { id: "skills", label: "Skills", hint: "1" },
@@ -23,6 +24,7 @@ const VIEWS: { id: View; label: string; hint: string }[] = [
   { id: "cards", label: "Cards", hint: "6" },
   { id: "digest", label: "Digest", hint: "7" },
   { id: "config", label: "Config", hint: "9" },
+  { id: "knowledge", label: "Knowledge", hint: "0" },
 ]
 
 function readView(): View {
@@ -451,7 +453,8 @@ export default function App() {
             <SkillsView brain={brain} query={query} focus={focus} selection={selection} onSelect={setSelection} />
           )}
           {view === "blueprint" && (
-            <BlueprintView brain={brain} query={query} focus={focus} onFocus={setFocus} onSelect={setSelection} />
+            <BlueprintView brain={brain} query={query} focus={focus} onFocus={setFocus} onSelect={setSelection}
+              onOpenKnowledge={(id) => { setFocus(id); go("knowledge") }} />
           )}
           {view === "system" && (
             <SystemView brain={brain} query={query} focus={focus} selection={selection} onSelect={setSelection} />
@@ -501,6 +504,7 @@ export default function App() {
               onOpenFile={(id) => setSelection({ kind: "file", id })}
             />
           )}
+          {view === "knowledge" && <KnowledgeView brain={brain} focus={focus} />}
         </div>
       </div>
       <Drawer

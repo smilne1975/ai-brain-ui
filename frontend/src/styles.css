@@ -30,6 +30,27 @@ body {
 button, input { font: inherit; color: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: wait; opacity: 0.6; }
+.graph-3d { position: relative; width: 100%; height: 100%; min-height: 300px; }
+.graph-3d-legend { position: absolute; bottom: 12px; left: 16px; pointer-events: none; font: 11px var(--mono); color: var(--mint); background: rgba(5,12,8,.86); padding: 8px; border-radius: 6px; }
+.knowledge-view { overflow: auto; padding: 20px; }
+.knowledge-view h1, .knowledge-view h2 { font-family: var(--display); }
+.knowledge-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.knowledge-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 15px; margin: 10px 0; }
+.knowledge-card button { margin: 4px; }
+.knowledge-card textarea, .knowledge-card input, .knowledge-card select { display: block; width: 100%; margin: 10px 0; padding: 10px; background: var(--bg-2); color: var(--mint); border: 1px solid var(--line); border-radius: 6px; font: 13px var(--sans); }
+.knowledge-card textarea { font-family: var(--mono); }
+.knowledge-source-list { max-height: 180px; overflow: auto; }
+.knowledge-source-list label { display: flex; align-items: center; gap: 8px; padding: 3px; }
+.knowledge-source-list input { width: auto; margin: 0; }
+.knowledge-previous { max-height: 230px; overflow: auto; white-space: pre-wrap; font: 11px var(--mono); }
+.knowledge-warning { color: var(--gold); }
+.ask-evidence { display: grid; gap: 5px; margin: 8px 0; max-height: 140px; overflow: auto; }
+.ask-evidence button { background: rgba(61,255,154,.06); border: 1px solid var(--line); text-align: left; padding: 5px; font-size: 11px; }
+.ask-scope { position: relative; font: 11px var(--mono); min-width: 115px; }
+.ask-scope summary { cursor: pointer; }
+.ask-scope-list { position: absolute; z-index: 20; bottom: 100%; max-height: 200px; overflow: auto; min-width: 210px; padding: 8px; background: var(--bg-2); border: 1px solid var(--line); }
+.ask-scope-list label { display: flex; align-items: center; gap: 8px; padding: 4px; }
+@media (max-width: 760px) { .knowledge-grid { grid-template-columns: 1fr; } }
 
 .app {
   height: 100%;
@@ -152,7 +173,7 @@ button:disabled { cursor: wait; opacity: 0.6; }
   position: absolute; left: 12px; top: 11px; width: 16px; height: 16px;
   fill: none; stroke: var(--muted); stroke-width: 1.7;
 }
-.search input, .ask-row input {
+.search input, .ask-row > input {
   width: 100%;
   background: rgba(8, 14, 11, 0.9);
   border: 1px solid var(--line);
@@ -160,7 +181,7 @@ button:disabled { cursor: wait; opacity: 0.6; }
   padding: 10px 14px 10px 36px;
   outline: none;
 }
-.search input:focus, .ask-row input:focus { border-color: rgba(61, 255, 154, 0.65); box-shadow: 0 0 0 3px rgba(61, 255, 154, 0.12); }
+.search input:focus, .ask-row > input:focus { border-color: rgba(61, 255, 154, 0.65); box-shadow: 0 0 0 3px rgba(61, 255, 154, 0.12); }
 .search-pop {
   position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; right: 0;
   background: #0d1410; border: 1px solid var(--line); border-radius: 12px;
@@ -321,7 +342,7 @@ button:disabled { cursor: wait; opacity: 0.6; }
 .ask-suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .ask-suggestions button { font-size: 12.5px; }
 .ask-row { display: flex; gap: 8px; max-width: 860px; margin: 0 auto; width: 100%; }
-.ask-row input { padding-left: 16px; }
+.ask-row > input { padding-left: 16px; }
 .primary {
   background: var(--green); color: #062015; border: none; border-radius: 999px;
   padding: 0 16px; font-weight: 700;

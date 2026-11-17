@@ -138,7 +138,8 @@ def test_skips_caches_binaries_and_per_project_cap(tmp_path: Path, monkeypatch):
     nested = project / "node_modules" / "pkg"
     nested.mkdir(parents=True)
     (nested / "left.py").write_text("UNIQUE_NODE_MARKER = True\n", encoding="utf-8")
-    (project / "Node_Modules").mkdir()
+    # A case-insensitive Windows volume considers this the same directory.
+    (project / "Node_Modules").mkdir(exist_ok=True)
     (project / "Node_Modules" / "also.py").write_text("UNIQUE_NODE_CASE = True\n", encoding="utf-8")
     upload = project / ".tmp.driveupload"
     upload.mkdir()
