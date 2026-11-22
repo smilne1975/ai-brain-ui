@@ -354,7 +354,8 @@ def pages(root: Path, brain: dict) -> list[dict]:
     return result
 
 
-def source_impact(root: Path, brain: dict, approved_pages: list[dict], saved_answers: list[dict]) -> list[dict]:
+def source_impact(root: Path, brain: dict, approved_pages: list[dict], saved_answers: list[dict],
+                  decisions: list[dict] = (), questions: list[dict] = ()) -> list[dict]:
     """List the approved artifacts that depend on each stale source."""
     records = {record["id"]: record for record in brain["files"]}
     impacts: dict[str, dict] = {}
@@ -378,7 +379,8 @@ def source_impact(root: Path, brain: dict, approved_pages: list[dict], saved_ans
             return None
         return {"id": target["id"], "rel": target["rel"]}
 
-    for kind, artifacts in (("page", approved_pages), ("answer", saved_answers)):
+    keys = {"page": ("page_id", "title"), "answer": ("name", "name"), "decision": ("id", "title")}
+    for kind, artifacts in (("page", approved_pages), ("answer", saved_answers), ("decision", decisions)):
         for artifact in artifacts:
             sources = {source["id"]: source for source in artifact["sources"]}
             for source_id in artifact["stale_sources"]:
@@ -389,10 +391,33 @@ def source_impact(root: Path, brain: dict, approved_pages: list[dict], saved_ans
                               "changed" if _fingerprint(root, record) is not None else "unreadable")
                     impacts[source_id] = {"source_id": source_id, "rel": sources[source_id]["rel"], "status": status,
                                           "affected": []}
+                id_key, label_key = keys[kind]
                 impacts[source_id]["affected"].append({"kind": kind, "project_id": artifact["project_id"],
-                    "id": artifact["page_id"] if kind == "page" else artifact["name"],
-                    "label": artifact["title"] if kind == "page" else artifact["name"],
+                    "id": artifact[id_key], "label": artifact[label_key],
+                    "passage": artifact.get("text", "")[:400] if kind == "decision" else None,
                     "move": verified_move(sources[source_id], artifact["project_id"]) if kind == "page" and source_id not in records else None})
+    for question in questions:
+        if question["state"] != "following":
+            continue
+        seen = set()
+        for item in question["reviewed"]["items"]:
+            source_id = item["id"]
+            if source_id in seen:
+                continue
+            if source_id not in impacts and item["kind"] in {"file", "clip"}:
+                record = records.get(source_id)
+                project = next((p for p in brain["projects"] if p["id"] == item["project_id"]), None)
+                clip = clips.approved_clip(root, project, source_id) if project and item["kind"] == "clip" else None
+                expected = item.get("source_sha256")
+                hash_now = (clips.fingerprint(clip) if clip else _fingerprint(root, record) if record else None) if expected else None
+                if not (record or clip) or (expected and expected != hash_now):
+                    impacts[source_id] = {"source_id": source_id, "rel": record["rel"] if record else item["label"],
+                                          "status": "changed" if hash_now else "missing, unreadable or not indexed", "affected": []}
+            if source_id not in impacts:
+                continue
+            seen.add(source_id)
+            impacts[source_id]["affected"].append({"kind": "question", "project_id": item["project_id"],
+                "id": question["id"], "label": question["question"], "passage": item["excerpt"], "move": None})
     return sorted(impacts.values(), key=lambda item: item["source_id"])
 
 
@@ -501,7 +526,8 @@ def save_skill(root: Path, brain: dict, project_id: str, name: str, description:
     return {"path": str(path), "name": slug}
 
 
-def save_answer(root: Path, brain: dict, project_id: str, title: str, answer: str, source_ids: list[str]) -> dict:
+def save_answer(root: Path, brain: dict, project_id: str, title: str, answer: str, source_ids: list[str],
+                passages: list[dict] = ()) -> dict:
     if private_folders_active():
         raise ValueError("Answer saving is unavailable while private-folder exclusions are enabled")
     _project(brain, project_id)
@@ -515,8 +541,30 @@ def save_answer(root: Path, brain: dict, project_id: str, title: str, answer: st
     folder = root / ".brain" / "answers" / _slug(project_id)
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{name}.md"
-    lines = [f"# {redact(title.strip())[:120]}", "", redact(answer.strip()), "", "## Sources", ""]
+    safe_answer = "\n".join(line for line in redact(answer.strip()).splitlines() if not line.startswith("<!-- ai-brain-passage "))
+    lines = [f"# {redact(title.strip())[:120]}", "", safe_answer, "", "## Sources", ""]
     lines += [f"- `{src['project_id']}/{src['rel']}` (sha256: {src['sha256']})" for src in sources]
+    for passage in passages:
+        src = next((item for item in sources if item["id"] == passage["id"]), None)
+        if not src or not passage["excerpt"]:
+            continue
+        record = records[src["id"]]
+        page = passage.get("page")
+        text = (next((entry["text"] for entry in record.get("pdf_pages", []) if entry["page"] == page), "") if page
+                else record.get("excerpt", ""))
+        plain = passage["excerpt"].strip("…").strip()
+        if not plain or plain not in " ".join(text.split()):
+            continue
+        path_now = _resolve_under_root(root, record)
+        try:
+            stat = path_now.stat() if path_now else None
+        except OSError:
+            continue
+        if not stat or record.get("observed") != [str(stat.st_mtime_ns), stat.st_size]:
+            continue
+        stored = {**passage, "kind": "file", "project_id": src["project_id"], "label": f"{src['project_id']}/{src['rel']}",
+                  "source_mtime": record.get("mtime")}
+        lines.append("<!-- ai-brain-passage " + json.dumps(stored, ensure_ascii=True).replace("-", r"\u002d") + " -->")
     with path.open("x", encoding="utf-8") as file:
         file.write("\n".join(lines) + "\n")
     return {"name": name, "project_id": project_id, "path": str(path), "sources": sources, "stale_sources": []}
@@ -534,11 +582,28 @@ def answers(root: Path, brain: dict) -> list[dict]:
                 text = path.read_text(encoding="utf-8")
             except OSError:
                 continue
+            metadata = text.rsplit("\n## Sources\n", 1)[-1]
             sources = [{"rel": path_in_project, "sha256": sha, "id": f"{source_project}:{path_in_project}"}
                        for source_project, path_in_project, sha in re.findall(
-                           r"^- `([^/`]+)/([^`]+)` \(sha256: ([0-9a-f]{64})\)$", text, re.M)]
+                           r"^- `([^/`]+)/([^`]+)` \(sha256: ([0-9a-f]{64})\)$", metadata, re.M)]
             stale = [item["id"] for item in sources if item["id"] not in records or
                      _fingerprint(root, records[item["id"]]) != item["sha256"]]
+            citations = []
+            source_ids = {item["id"] for item in sources}
+            marker = r"^<!-- ai-brain-passage (\{[^\r\n]{1,4000}\}) -->$"
+            for encoded in re.findall(marker, metadata, re.M)[-8:]:
+                try:
+                    item = json.loads(encoded)
+                    if isinstance(item.get("id"), str) and item["id"] in source_ids and isinstance(item.get("excerpt"), str):
+                        pid_for_source, rel = item["id"].split(":", 1)
+                        citations.append({"id": item["id"], "project_id": pid_for_source, "label": f"{pid_for_source}/{rel}",
+                                          "kind": "file", "excerpt": redact(item["excerpt"])[:400],
+                                          "page": item.get("page") if isinstance(item.get("page"), int) else None,
+                                          "source_mtime": item.get("source_mtime") if isinstance(item.get("source_mtime"), int) else None,
+                                          "stale": item["id"] in stale})
+                except (ValueError, AttributeError):
+                    continue
+            text = re.sub(marker + r"\n?", "", text, flags=re.M)
             result.append({"name": path.stem, "project_id": pid, "content": text,
-                           "sources": sources, "stale_sources": stale})
+                           "sources": sources, "stale_sources": stale, "passages": citations})
     return result

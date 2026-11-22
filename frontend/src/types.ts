@@ -391,7 +391,7 @@ export type Selection =
   | { kind: "connection"; id: string }
 
 export type AskEvidence = { id: string; label: string; kind: string; project_id: string; excerpt: string; stale?: boolean;
-  page?: number; source_url?: string; semantic?: boolean; derived?: boolean; repeated_count?: number;
+  page?: number | null; source_mtime?: number | null; captured_at?: string | null; source_url?: string; semantic?: boolean; derived?: boolean; repeated_count?: number;
   repeated_sources?: AskEvidence[]; evidence_basis?: string[]; confirmed_origin?: string }
 
 export type AskResponse = {
@@ -419,6 +419,12 @@ export type MeetingItem = { line: number; kind: "decision" | "action"; text: str
 export type SavedMeetingItem = MeetingItem & { source_id: string; source_name: string; approved_at: string }
 export type ClipDraft = { id: string; filename: string; url: string; title: string; content: string; captured_at: string | null }
 export type WebClip = ClipDraft & { active: boolean; imported_at: string }
+export type CaptureItem = { id: string; kind: "note" | "link" | "clip"; name: string; content: string;
+  clip: ClipDraft | null; state: "staged" | "filed" | "withdrawn"; tags: string; filing: string }
+export type CaptureReceipt = { status: "ready for review" | "duplicate"; item?: CaptureItem; existing_clip?: WebClip }
+export type ReviewedLink = { id: string; reason: string; state: "suggested" | "kept";
+  ends: [{ id: string; label: string; excerpt: string }, { id: string; label: string; excerpt: string }] }
+export type LinkReview = { suggested: ReviewedLink[]; kept: ReviewedLink[]; limited: boolean; unavailable_kept: number }
 export type DeliverableEvidence = { id: string; title: string; revision: string; sha256: string; sources: KnowledgeSource[] }
 export type DeliverableDraft = { title: string; token: string; markdown: string; pages: DeliverableEvidence[] }
 export type DeliverableRecord = { id: string; title: string; artifact_path: string; created_at: string; pages: DeliverableEvidence[];
@@ -439,10 +445,11 @@ export type KnowledgePage = { project_id: string; page_id: string; title: string
 export type KnowledgePreview = { project_id: string; page_id: string; topic: string | null; source_ids: string[] | null; title: string; content: string; sources: KnowledgeSource[];
   changed_sources: string[]; missing_sources: string[]; current_revision: string | null; previous_content: string; warning: string }
 export type KnowledgeIndex = { pages: KnowledgePage[]; answers: { name: string; project_id: string; content: string;
-  stale_sources: string[] }[]; findings: { project_id: string; kind: string; detail: string }[];
+  stale_sources: string[]; passages?: AskEvidence[] }[]; findings: { project_id: string; kind: string; detail: string }[];
   available_clips: { id: string; project_id: string; title: string }[];
   source_impact: { source_id: string; rel: string; status: string;
-    affected: { kind: "page" | "answer"; project_id: string; id: string; label: string; move: { id: string; rel: string } | null }[] }[];
+     affected: { kind: "page" | "answer" | "decision" | "question"; project_id: string; id: string; label: string;
+       passage?: string | null; move: { id: string; rel: string } | null }[] }[];
   workflow_candidates: { project_id: string; name: string; count: number; sessions: number; outcome: "unverified" | "reported success";
     suggested_steps?: string[]; examples: { session_id: string; text: string; when: string | null; files: string[];
       run_outcome?: "success" | "failure" | "unknown"; evidence?: string }[] }[] }

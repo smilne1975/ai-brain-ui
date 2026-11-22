@@ -1,5 +1,35 @@
 import type { AskResponse, Brain, BrainStatus, BriefBoard, CardBoard, ChatIndex, ClipDraft, ConfigBoard, DeliverableDraft, DeliverableRecord, Digest, KnowledgeIndex, KnowledgePreview, McpDoctor, McpUsage, MeetingItem, ObsidianPreview, SavedMeetingItem, Timeline, VoiceDraft, VoiceItem, VoiceNote, WebClip, WorkflowBoard } from "./types"
-import type { ScanReplay, TraceQuestion, TraceRecord } from "./types"
+import type { CaptureItem, CaptureReceipt, LinkReview, ScanReplay, TraceQuestion, TraceRecord } from "./types"
+
+async function localReview<T>(path: string, fallback: string, body?: object): Promise<T> {
+  const res = await fetch(path, body === undefined ? undefined : {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await readDetail(res, fallback))
+  return res.json() as Promise<T>
+}
+
+export function fetchSourceReview(project: string) {
+  return localReview<{ items: KnowledgeIndex["source_impact"]; limited: boolean }>(`/api/source-review/${encodeURIComponent(project)}`, "Could not check source changes.")
+}
+
+export function getLinkReview(project: string, review?: { id: string; state: "kept" | "dismissed" }) {
+  return localReview<LinkReview>(`/api/link-review/${encodeURIComponent(project)}${review ? `/${encodeURIComponent(review.id)}` : ""}`,
+    "Could not review suggested links.", review && { state: review.state })
+}
+
+export function getCaptures(project: string) {
+  return localReview<{ items: CaptureItem[] }>(`/api/captures/${encodeURIComponent(project)}`, "Could not load captures.")
+}
+
+export function stageCapture(project: string, filename: string, text: string, kind: CaptureItem["kind"]) {
+  return localReview<CaptureReceipt>(`/api/captures/${encodeURIComponent(project)}`, "Could not stage this item.", { filename, text, kind })
+}
+
+export function changeCapture(project: string, id: string, action: "approve" | "undo" | "remove", tags = "", filing = "") {
+  return localReview<{ item?: CaptureItem; removed?: boolean; duplicate?: WebClip }>(`/api/captures/${encodeURIComponent(project)}/${encodeURIComponent(id)}`,
+    "Could not update this capture.", { action, tags, filing })
+}
 
 export async function fetchStatus(): Promise<BrainStatus> {
   const res = await fetch("/api/health")
@@ -91,7 +121,7 @@ export async function fetchMcpDoctor(): Promise<McpDoctor> {
 async function readDetail(res: Response, fallback: string): Promise<string> {
   try {
     const body = (await res.json()) as { detail?: string }
-    if (body.detail) return body.detail
+    if (typeof body.detail === "string") return body.detail
   } catch {
     /* keep the fallback */
   }
@@ -273,9 +303,10 @@ export async function downloadObsidian(project: string, preview: ObsidianPreview
   return res.blob()
 }
 
-export async function saveAnswer(project_id: string, title: string, answer: string, source_ids: string[]) {
+export async function saveAnswer(project_id: string, title: string, answer: string, source_ids: string[],
+  passages: { id: string; excerpt: string; page?: number | null }[] = []) {
   const res = await fetch("/api/answers", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ project_id, title, answer, source_ids }) })
+    body: JSON.stringify({ project_id, title, answer, source_ids, passages }) })
   if (!res.ok) throw new Error(await readDetail(res, "Could not save answer."))
   return res.json()
 }

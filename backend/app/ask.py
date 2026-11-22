@@ -53,6 +53,7 @@ def answer(brain: dict, question: str, project_id: str | None, provider: dict | 
                     suffix = " (OCR)" if page["method"] == "ocr" else ""
                     ranked_evidence.append((score, {**cite, "page": page["page"],
                                                      "label": f"{cite['label']} · page {page['page']}{suffix}",
+                                                     "source_mtime": rec.get("mtime"),
                                                      "excerpt": _matched_excerpt(page["text"], q)}))
             continue
         excerpt = rec.get("excerpt") or ""
@@ -63,6 +64,7 @@ def answer(brain: dict, question: str, project_id: str | None, provider: dict | 
         if score or semantic_score:
             ranked_evidence.append((score + min(semantic_score, 1.0) * 1.25, {**cite,
                                     "excerpt": _matched_excerpt(excerpt or rec["summary"], q),
+                                    "source_mtime": rec.get("mtime"), "derived": not bool(excerpt),
                                     "_evidence_hash": rec.get("_evidence_hash"),
                                     **({"semantic": True} if semantic_score else {})}))
     clip_matched = False
@@ -73,6 +75,7 @@ def answer(brain: dict, question: str, project_id: str | None, provider: dict | 
         clip_matched = True
         ranked_evidence.append((score, {"id": f"clip:{pid}:{clip['id']}", "kind": "clip", "project_id": pid,
                                          "label": f"{names[pid]}/web clip/{clip['title']}", "source_url": clip["url"],
+                                         "captured_at": clip.get("captured_at"),
                                          "excerpt": _matched_excerpt(clip["content"], q),
                                          "_evidence_hash": origins_view.text_key(clip["content"])}))
     note_matched = False

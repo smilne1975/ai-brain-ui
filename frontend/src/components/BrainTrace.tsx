@@ -1,12 +1,12 @@
 import { useState } from "react"
-import type { AskEvidence, FileRec, KnowledgePage, KnowledgeSource, TraceQuestion, TraceRecord } from "../types"
+import type { AskEvidence, FileRec, KnowledgeIndex, KnowledgePage, KnowledgeSource, TraceQuestion, TraceRecord } from "../types"
 
-type Passage = { id: string; label: string; text?: string; url?: string; note: string }
+type Passage = { id: string; label: string; text?: string; url?: string; note: string; evidence?: AskEvidence }
 type Artifact = { id: string; title: string; kind: string; detail: string; when?: string; passages: Passage[]; record?: TraceRecord }
 
 function fromSearch(item: AskEvidence): Passage {
   return { id: item.id, label: `${item.label}${item.page ? ` · page ${item.page}` : ""}`, text: item.excerpt,
-    url: item.source_url, note: item.stale ? "Recorded excerpt · source needs recheck" : "Recorded search excerpt · not a verdict" }
+    url: item.source_url, evidence: item, note: item.stale ? "Recorded excerpt · source needs recheck" : "Recorded search excerpt · not a verdict" }
 }
 
 function fromSource(source: KnowledgeSource, stale: boolean, current: FileRec | undefined, historical = false): Passage {
@@ -16,19 +16,24 @@ function fromSource(source: KnowledgeSource, stale: boolean, current: FileRec | 
       current?.excerpt ? "Current indexed preview · not a claim-level quotation" : "Recorded citation · no excerpt available" }
 }
 
-export function BrainTrace({ focus, files, pages, records, history, watches, ask, preferred, warning, onFocus, onFile }: {
+export function BrainTrace({ focus, files, pages, savedAnswers, records, history, watches, ask, preferred, warning, onFocus, onFile, onMap }: {
   focus: string | null; files: FileRec[]; pages: KnowledgePage[]; records: TraceRecord[]; history: TraceRecord[]; watches: TraceQuestion[];
+  savedAnswers: KnowledgeIndex["answers"];
   ask: { title: string; answer: string; evidence: AskEvidence[]; when?: string } | null; preferred?: string;
-  warning?: string; onFocus: (id: string) => void; onFile: (id: string) => void
+  warning?: string; onFocus: (id: string) => void; onFile: (id: string) => void;
+  onMap: (item: AskEvidence, origin: string) => void
 }) {
   const [picked, setPicked] = useState(preferred ?? "")
-  const [selected, setSelected] = useState<{ artifact: string; passage: Passage } | null>(null)
+  const [selected, setSelected] = useState<{ artifact: string; key: string; passage: Passage } | null>(null)
   const byId = new Map(files.map((file) => [file.id, file]))
   const recordPassages = (record: TraceRecord, historical = false) => record.sources.map((src) =>
     fromSource(src, !!record.stale_sources?.includes(src.id), byId.get(src.id), historical))
   const artifacts: Artifact[] = [
     ...(ask ? [{ id: "ask", title: ask.title, kind: "Last Ask answer", detail: ask.answer, when: ask.when,
       passages: ask.evidence.filter((item) => !focus || item.project_id === focus).map(fromSearch) }] : []),
+    ...savedAnswers.filter((item) => !focus || item.project_id === focus).map((item) => ({
+      id: `saved:${item.project_id}:${item.name}`, title: item.name, kind: "Saved answer", detail: item.content.slice(0, 1200),
+      passages: (item.passages ?? []).map(fromSearch) })),
     ...records.filter((row) => ["decision", "fact"].includes(row.kind)).map((row) => ({ id: `record:${row.id}`,
       title: row.title, kind: row.kind, detail: row.text, when: row.updated_at, passages: recordPassages(row), record: row })),
     ...watches.filter((row) => row.state === "following" && (!focus || row.scope.some((item) => item.id === focus))).map((row) => ({
@@ -48,8 +53,9 @@ export function BrainTrace({ focus, files, pages, records, history, watches, ask
     normalize(other.text) !== normalize(row.text)).slice(0, 3) : []
   function date(value: string) { return new Date(value).toLocaleString() }
   function passageCard(passage: Passage, relation: string, key: number) {
-    return <button key={`${passage.id}:${key}`} type="button" className={`brain-diagram-card${selected?.artifact === artifact.id && selected.passage === passage ? " on" : ""}`}
-      onClick={() => setSelected({ artifact: artifact.id, passage })}><strong>{passage.label}</strong><small>{relation} · {passage.note}</small></button>
+    const identity = `${passage.id}:${relation}:${key}`
+    return <button key={identity} type="button" className={`brain-diagram-card${selected?.artifact === artifact.id && selected.key === identity ? " on" : ""}`}
+      onClick={() => setSelected({ artifact: artifact.id, key: identity, passage })}><strong>{passage.label}</strong><small>{relation} · {passage.note}</small></button>
   }
   return <section className="brain-map-panel" aria-label="Evidence trail">
     <header><div><h2>Evidence trail</h2><p className="quiet">Follow recorded citations and decisions back to the source. A connection is not proof.</p></div>
@@ -80,6 +86,9 @@ export function BrainTrace({ focus, files, pages, records, history, watches, ask
         {selected.passage.text && <blockquote>{selected.passage.text}</blockquote>}
         {selected.passage.url && /^https?:\/\//i.test(selected.passage.url) && <a href={selected.passage.url} target="_blank" rel="noreferrer">Open original web source</a>}
         {byId.has(selected.passage.id) && <button type="button" className="ghost" onClick={() => onFile(selected.passage.id)}>Open current file preview</button>}
+        {selected.passage.evidence && byId.has(selected.passage.id) && <button type="button" className="ghost"
+          onClick={() => onMap(selected.passage.evidence!, artifact.title)}>Reveal this passage on map</button>}
+        {selected.passage.evidence?.kind === "file" && !byId.has(selected.passage.id) && <p>Source is not in the current index.</p>}
       </aside>}
       {!focus && ask && <div className="brain-flow-imports">{[...new Set(ask.evidence.map((item) => item.project_id))].map((id) =>
         <button type="button" key={id} className="ghost" onClick={() => onFocus(id)}>Focus {id}</button>)}</div>}

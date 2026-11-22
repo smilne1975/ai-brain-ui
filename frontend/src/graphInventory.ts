@@ -51,16 +51,16 @@ export function sliceProjectGraph(graph: Graph, files: IndexedFile[], folder: st
   const nodesById = new Map(indexedNodes.map((node) => [node.id, node]))
   // Only restore a selection that still exists in the visible index.
   const selectedNode = selectedId ? nodesById.get(selectedId) : undefined
-  const neighbors = new Set<string>()
   const incident = []
   const remainder = []
   for (const edge of graph.edges) {
     if (!nodesById.has(edge.source) || !nodesById.has(edge.target)) continue
     if (selectedNode && (edge.source === selectedNode.id || edge.target === selectedNode.id)) {
-      neighbors.add(edge.source === selectedNode.id ? edge.target : edge.source)
       incident.push(edge)
     } else remainder.push(edge)
   }
+  incident.sort((a, b) => Number(/^(evidence-focus:|review-focus:)/.test(b.id)) - Number(/^(evidence-focus:|review-focus:)/.test(a.id)))
+  const neighbors = new Set(incident.map((edge) => edge.source === selectedNode?.id ? edge.target : edge.source))
   const roots = indexedNodes.filter((node) => node.kind === "project")
   const pinned = [...(selectedNode ? [selectedNode] : []), ...roots,
     ...[...neighbors].flatMap((id) => nodesById.has(id) ? [nodesById.get(id)!] : [])]

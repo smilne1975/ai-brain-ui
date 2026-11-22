@@ -49,7 +49,7 @@ export function WebClipInbox({ project, onChange }: { project: string; onChange:
       <button type="button" className="ghost" disabled={busy} onClick={() => setDraft(null)}>Cancel</button>
     </div>}
     {message && <p role="status">{message}</p>}
-    {items.map((item) => <p key={item.id}>
+    {items.map((item) => <p key={item.id} id={`web-clip-${item.id}`}>
       <a href={item.url} target="_blank" rel="noreferrer">{item.title}</a> · {item.active ? "searchable" : "not indexed"}{" "}
       <button type="button" className="ghost" disabled={busy} onClick={async () => {
         setBusy(true); setMessage("")

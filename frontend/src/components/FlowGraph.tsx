@@ -174,7 +174,8 @@ function layout(nodes: GraphNode[], edges: GraphEdge[]): { nodes: FlowNode[]; ed
       label: edge.label || undefined,
       type: "smoothstep",
       style: {
-        stroke: hot.has(edge.label) ? "rgba(240,193,74,0.75)" : "rgba(61,255,154,0.5)",
+        stroke: edge.id.startsWith("evidence-focus:") ? "#ad8bff" : /suggested-link:/.test(edge.id) || hot.has(edge.label) ? "rgba(240,193,74,0.75)" : "rgba(61,255,154,0.5)",
+        strokeDasharray: /suggested-link:/.test(edge.id) ? "6 4" : undefined,
         strokeWidth: 1.25,
       },
       labelStyle: { fill: "#c5d7cc", fontSize: 10 },

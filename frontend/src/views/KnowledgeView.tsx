@@ -8,6 +8,8 @@ import { WorkflowEvents } from "../components/WorkflowEvents"
 import { VoiceInbox } from "../components/VoiceInbox"
 import { ObsidianExport } from "../components/ObsidianExport"
 import { ProjectRecords } from "../components/ProjectRecords"
+import { SourceReview } from "../components/SourceReview"
+import { CaptureInbox } from "../components/CaptureInbox"
 
 export function KnowledgeView({ brain, focus }: { brain: Brain; focus: string | null }) {
   const [index, setIndex] = useState<KnowledgeIndex | null>(null)
@@ -20,6 +22,7 @@ export function KnowledgeView({ brain, focus }: { brain: Brain; focus: string | 
   const [topic, setTopic] = useState("")
   const [topicSources, setTopicSources] = useState<string[]>([])
   const [meetingProject, setMeetingProject] = useState("")
+  const [clipRevision, setClipRevision] = useState(0)
   useEffect(() => { void fetchKnowledge().then(setIndex).catch((err: Error) => setMessage(err.message)) }, [brain.scanned_at])
 
   const visible = brain.projects.filter((project) => !focus || project.id === focus)
@@ -105,6 +108,9 @@ export function KnowledgeView({ brain, focus }: { brain: Brain; focus: string | 
           {index?.findings.length ? index.findings.map((item, n) => <p key={n} className="knowledge-warning">{item.project_id}: {item.detail}</p>) : <p>No broken links or changed sources found in approved pages. This does not verify the truth of source files.</p>}
         </div>}
         <h2>Source changes</h2>
+        {!brain.privacy && index && visible.map((project) => <details key={`${project.id}:${brain.scanned_at}`}>
+          <summary>{project.name}: source impact plan</summary><SourceReview project={project.id} index={index} load={load} />
+        </details>)}
         {index?.source_impact.map((source) => {
           const affected = source.affected.filter((item) => !focus || item.project_id === focus)
           if (!affected.length) return null
@@ -145,8 +151,11 @@ export function KnowledgeView({ brain, focus }: { brain: Brain; focus: string | 
         {visible.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
       </select>
       {visible.some((project) => project.id === (focus ?? meetingProject)) && <>
+        <details><summary>Capture inbox</summary><CaptureInbox key={focus ?? meetingProject} project={focus ?? meetingProject}
+          notes={brain.files.filter((file) => file.project_id === (focus ?? meetingProject) && !file.env_class && file.kind === "markdown")}
+          onChange={() => { setClipRevision((n) => n + 1); void fetchKnowledge().then(setIndex).catch((err: Error) => setMessage(err.message)) }} /></details>
         <details><summary>Meeting decisions and actions</summary><MeetingInbox key={focus ?? meetingProject} project={focus ?? meetingProject} /></details>
-        <details><summary>Web-clip inbox</summary><WebClipInbox key={focus ?? meetingProject} project={focus ?? meetingProject}
+        <details><summary>Web-clip inbox</summary><WebClipInbox key={`${focus ?? meetingProject}:${clipRevision}`} project={focus ?? meetingProject}
           onChange={() => void fetchKnowledge().then(setIndex).catch((err: Error) => setMessage(err.message))} /></details>
         <details><summary>Tracked Markdown deliverables</summary>{index && <Deliverables key={focus ?? meetingProject}
           project={focus ?? meetingProject} pages={index.pages} />}</details>

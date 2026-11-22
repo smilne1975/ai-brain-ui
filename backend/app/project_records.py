@@ -50,6 +50,8 @@ def _db(root: Path, write: bool = False):
                 db.execute("CREATE TABLE IF NOT EXISTS living_questions (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL)")
                 db.execute("CREATE TABLE IF NOT EXISTS old_idea_feedback (id TEXT PRIMARY KEY, state TEXT NOT NULL, until TEXT)")
                 db.execute("CREATE TABLE IF NOT EXISTS kept_old_ideas (id TEXT PRIMARY KEY, data TEXT NOT NULL)")
+                db.execute("CREATE TABLE IF NOT EXISTS link_reviews (project TEXT, id TEXT, state TEXT NOT NULL, PRIMARY KEY (project, id))")
+                db.execute("CREATE TABLE IF NOT EXISTS captures (project TEXT, id TEXT, data TEXT NOT NULL, PRIMARY KEY (project, id))")
                 db.execute("BEGIN IMMEDIATE")
             yield db
     finally:

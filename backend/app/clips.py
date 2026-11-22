@@ -108,7 +108,12 @@ def import_clip(root: Path, project: dict, markdown: str, filename: str, expecte
     record = preview(markdown, filename)
     if record["id"] != expected_id:
         raise ValueError("Clip changed since the preview")
-    path = _folder(root, project) / f"{expected_id}.json"
+    return store_preview(root, project, record)
+
+
+def store_preview(root: Path, project: dict, record: dict) -> tuple[dict, bool]:
+    record = dict(record)
+    path = _folder(root, project) / f"{record['id']}.json"
     with _LOCK:
         if previous := _read(path):
             return previous, False
