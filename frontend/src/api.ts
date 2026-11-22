@@ -36,8 +36,12 @@ export function getCaptures(project: string) {
   return localReview<{ items: CaptureItem[] }>(`/api/captures/${encodeURIComponent(project)}`, "Could not load captures.")
 }
 
-export function stageCapture(project: string, filename: string, text: string, kind: CaptureItem["kind"]) {
+export function stageCapture(project: string, filename: string, text: string, kind: Exclude<CaptureItem["kind"], "image">) {
   return localReview<CaptureReceipt>(`/api/captures/${encodeURIComponent(project)}`, "Could not stage this item.", { filename, text, kind })
+}
+
+export function stageCaptureImage(project: string, filename: string, data: string) {
+  return localReview<CaptureReceipt>(`/api/capture-images/${encodeURIComponent(project)}`, "Could not stage this screenshot.", { filename, data })
 }
 
 export function changeCapture(project: string, id: string, action: "approve" | "undo" | "remove", tags = "", filing = "") {

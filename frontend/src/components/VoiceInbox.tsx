@@ -7,7 +7,7 @@ function timestamp(ms: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`
 }
 
-export function VoiceInbox({ project }: { project: string }) {
+export function VoiceInbox({ project, queuedFile, onUseQueued }: { project: string; queuedFile?: File; onUseQueued?: () => void }) {
   const [available, setAvailable] = useState(false)
   const [notes, setNotes] = useState<VoiceNote[]>([])
   const [draft, setDraft] = useState<(VoiceDraft & { file: File }) | null>(null)
@@ -33,19 +33,24 @@ export function VoiceInbox({ project }: { project: string }) {
     setDraft((current) => current && { ...current, items: current.items.map((row) => row.segment === segment ? { ...row, ...patch } : row) })
   }
 
+  async function transcribe(file: File) {
+    if (file.size > 24 * 1024 * 1024) { setMessage("Choose a WAV file under 24 MiB."); return }
+    setBusy(true); setMessage("Transcribing on this machine…"); setApproved([])
+    try { setDraft({ ...await previewVoiceNote(project, file), file }); setMessage(""); if (file === queuedFile) onUseQueued?.() }
+    catch (err) { setMessage(err instanceof Error ? err.message : "Could not transcribe voice memo.") }
+    finally { setBusy(false) }
+  }
+
   return <div>
     <p className="quiet">Choose a recorded 16-bit PCM WAV file up to two minutes. Speech recognition runs locally and can mishear names or technical terms; review before saving.</p>
     {!available && <p>Local speech recognition needs a configured whisper.cpp executable and model. There is no cloud fallback.</p>}
+    {queuedFile && <p>{queuedFile.name} · selected from capture, not transcribed {" "}
+      <button type="button" className="ghost" disabled={!available || busy || !!draft} onClick={() => void transcribe(queuedFile)}>Transcribe selected capture locally</button></p>}
     <label>Choose voice memo <input type="file" accept=".wav,audio/wav" disabled={!available || busy || !!draft}
       onChange={async (event) => {
         const file = event.target.files?.[0]
         event.target.value = ""
-        if (!file) return
-        if (file.size > 24 * 1024 * 1024) { setMessage("Choose a WAV file under 24 MiB."); return }
-        setBusy(true); setMessage("Transcribing on this machine…"); setApproved([])
-        try { setDraft({ ...await previewVoiceNote(project, file), file }); setMessage("") }
-        catch (err) { setMessage(err instanceof Error ? err.message : "Could not transcribe voice memo.") }
-        finally { setBusy(false) }
+        if (file) await transcribe(file)
       }} /></label>
     {draft && <div>
       <p>{draft.filename}</p>

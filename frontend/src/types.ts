@@ -392,6 +392,7 @@ export type Selection =
 
 export type AskEvidence = { id: string; label: string; kind: string; project_id: string; excerpt: string; stale?: boolean;
   page?: number | null; source_mtime?: number | null; captured_at?: string | null; source_url?: string; semantic?: boolean; derived?: boolean; repeated_count?: number;
+  recorded_quote?: boolean;
   repeated_sources?: AskEvidence[]; evidence_basis?: string[]; confirmed_origin?: string }
 
 export type AskResponse = {
@@ -419,8 +420,8 @@ export type MeetingItem = { line: number; kind: "decision" | "action"; text: str
 export type SavedMeetingItem = MeetingItem & { source_id: string; source_name: string; approved_at: string }
 export type ClipDraft = { id: string; filename: string; url: string; title: string; content: string; captured_at: string | null }
 export type WebClip = ClipDraft & { active: boolean; imported_at: string }
-export type CaptureItem = { id: string; kind: "note" | "link" | "clip"; name: string; content: string;
-  clip: ClipDraft | null; state: "staged" | "filed" | "withdrawn"; tags: string; filing: string }
+export type CaptureItem = { id: string; kind: "note" | "link" | "clip" | "image"; name: string; content: string;
+  clip: ClipDraft | null; state: "staged" | "filed" | "withdrawn"; tags: string; filing: string; width?: number; height?: number }
 export type CaptureReceipt = { status: "ready for review" | "duplicate"; item?: CaptureItem; existing_clip?: WebClip }
 export type ReviewedLink = { id: string; reason: string; state: "suggested" | "kept";
   ends: [{ id: string; label: string; excerpt: string }, { id: string; label: string; excerpt: string }] }

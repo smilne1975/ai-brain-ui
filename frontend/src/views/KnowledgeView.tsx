@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { approveKnowledge, fetchKnowledge, previewKnowledge, reviewKnowledge, saveReviewedSkill } from "../api"
 import type { Brain, KnowledgeIndex, KnowledgePreview } from "../types"
 import { MeetingInbox } from "../components/MeetingInbox"
@@ -23,6 +23,8 @@ export function KnowledgeView({ brain, focus }: { brain: Brain; focus: string | 
   const [topicSources, setTopicSources] = useState<string[]>([])
   const [meetingProject, setMeetingProject] = useState("")
   const [clipRevision, setClipRevision] = useState(0)
+  const [voiceCapture, setVoiceCapture] = useState<{ project: string; file: File }>()
+  const voiceDetails = useRef<HTMLDetailsElement>(null)
   useEffect(() => { void fetchKnowledge().then(setIndex).catch((err: Error) => setMessage(err.message)) }, [brain.scanned_at])
 
   const visible = brain.projects.filter((project) => !focus || project.id === focus)
@@ -154,6 +156,10 @@ export function KnowledgeView({ brain, focus }: { brain: Brain; focus: string | 
       {visible.some((project) => project.id === (focus ?? meetingProject)) && <>
         <details><summary>Capture inbox</summary><CaptureInbox key={focus ?? meetingProject} project={focus ?? meetingProject}
           notes={brain.files.filter((file) => file.project_id === (focus ?? meetingProject) && !file.env_class && file.kind === "markdown")}
+          onVoice={(file) => {
+            setVoiceCapture({ project: focus ?? meetingProject, file })
+            if (voiceDetails.current) { voiceDetails.current.open = true; voiceDetails.current.scrollIntoView({ block: "nearest" }) }
+          }}
           onChange={() => { setClipRevision((n) => n + 1); void fetchKnowledge().then(setIndex).catch((err: Error) => setMessage(err.message)) }} /></details>
         <details><summary>Meeting decisions and actions</summary><MeetingInbox key={focus ?? meetingProject} project={focus ?? meetingProject} /></details>
         <details><summary>Web-clip inbox</summary><WebClipInbox key={`${focus ?? meetingProject}:${clipRevision}`} project={focus ?? meetingProject}
@@ -161,7 +167,8 @@ export function KnowledgeView({ brain, focus }: { brain: Brain; focus: string | 
         <details><summary>Tracked Markdown deliverables</summary>{index && <Deliverables key={focus ?? meetingProject}
           project={focus ?? meetingProject} pages={index.pages} />}</details>
         <details><summary>n8n workflow events</summary><WorkflowEvents key={focus ?? meetingProject} project={focus ?? meetingProject} /></details>
-        <details><summary>Local voice-note inbox</summary><VoiceInbox key={focus ?? meetingProject} project={focus ?? meetingProject} /></details>
+        <details ref={voiceDetails}><summary>Local voice-note inbox</summary><VoiceInbox key={focus ?? meetingProject} project={focus ?? meetingProject}
+          queuedFile={voiceCapture?.project === (focus ?? meetingProject) ? voiceCapture.file : undefined} onUseQueued={() => setVoiceCapture(undefined)} /></details>
         <details><summary>Obsidian Markdown and Canvas export</summary><ObsidianExport key={focus ?? meetingProject} project={focus ?? meetingProject} /></details>
         <details><summary>Project memory, facts and handoffs</summary><ProjectRecords key={focus ?? meetingProject}
           project={focus ?? meetingProject} scan={brain.scanned_at} clips={index?.available_clips ?? []}

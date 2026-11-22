@@ -9,11 +9,17 @@ function fromSearch(item: AskEvidence): Passage {
     url: item.source_url, evidence: item, note: item.stale ? "Recorded excerpt · source needs recheck" : "Recorded search excerpt · not a verdict" }
 }
 
-function fromSource(source: KnowledgeSource, stale: boolean, current: FileRec | undefined, historical = false): Passage {
+function fromSource(source: KnowledgeSource, stale: boolean, current: FileRec | undefined, historical = false, approvedText = ""): Passage {
+  const recorded = [...approvedText.matchAll(/^>[^\S\n]*"([^"\n]+)"[^\S\n]*[-–—][^\S\n]*`?([^`\n]+)`?[^\S\n]*$/gm)]
+    .find((match) => match[2].trim() === (source.source_url ?? source.rel))?.[1]
+  const label = source.title || source.rel
   return { id: source.id, label: source.title || source.rel, url: source.source_url,
-    text: !stale && !historical ? current?.excerpt : undefined,
-    note: historical ? "Cited by the older revision · original excerpt not stored" : stale ? "Stored citation · source changed or unavailable" :
-      current?.excerpt ? "Current indexed preview · not a claim-level quotation" : "Recorded citation · no excerpt available" }
+    text: recorded || (!stale && !historical ? current?.excerpt : undefined),
+    note: recorded ? `Quotation in the reviewed text${stale || historical ? " · historic or source changed" : ""}` :
+      historical ? "Cited by the older revision · original excerpt not stored" : stale ? "Stored citation · source changed or unavailable" :
+        current?.excerpt ? "Current indexed preview · not a claim-level quotation" : "Recorded citation · no excerpt available",
+    evidence: current && { id: source.id, project_id: current.project_id, kind: "file", label, excerpt: recorded ?? "",
+      stale: stale || historical, recorded_quote: !!recorded } }
 }
 
 export function BrainTrace({ focus, files, pages, savedAnswers, records, history, watches, ask, preferred, warning, onFocus, onFile, onMap }: {
@@ -27,7 +33,7 @@ export function BrainTrace({ focus, files, pages, savedAnswers, records, history
   const [selected, setSelected] = useState<{ artifact: string; key: string; passage: Passage } | null>(null)
   const byId = new Map(files.map((file) => [file.id, file]))
   const recordPassages = (record: TraceRecord, historical = false) => record.sources.map((src) =>
-    fromSource(src, !!record.stale_sources?.includes(src.id), byId.get(src.id), historical))
+    fromSource(src, !!record.stale_sources?.includes(src.id), byId.get(src.id), historical, record.text))
   const artifacts: Artifact[] = [
     ...(ask ? [{ id: "ask", title: ask.title, kind: "Last Ask answer", detail: ask.answer, when: ask.when,
       passages: ask.evidence.filter((item) => !focus || item.project_id === focus).map(fromSearch) }] : []),
@@ -42,7 +48,7 @@ export function BrainTrace({ focus, files, pages, savedAnswers, records, history
       passages: row.reviewed.items.filter((item) => !focus || item.project_id === focus).map(fromSearch) })),
     ...pages.filter((page) => !focus || page.project_id === focus).map((page) => ({ id: `knowledge:${page.page_id}`,
       title: page.title, kind: "Approved page", detail: page.content.slice(0, 1200), when: page.updated_at,
-      passages: page.sources.map((src) => fromSource(src, page.stale_sources.includes(src.id), byId.get(src.id))) })),
+      passages: page.sources.map((src) => fromSource(src, page.stale_sources.includes(src.id), byId.get(src.id), false, page.content)) })),
   ]
   const artifact = artifacts.find((item) => item.id === picked) ?? artifacts[0]
   const row = artifact?.record
