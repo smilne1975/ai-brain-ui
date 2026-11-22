@@ -1,13 +1,14 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react"
-import { ask, fetchKnowledge, fetchTraceQuestions, fetchTraceRecords, saveAnswer } from "../api"
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
+import { ask, fetchKnowledge, fetchTraceQuestions, fetchTraceRecords, getLinkReview, saveAnswer } from "../api"
 import { BrainReplay } from "../components/BrainReplay"
 import { BrainTrace } from "../components/BrainTrace"
 import { FlowGraph } from "../components/FlowGraph"
 import { GraphFileFinder } from "../components/GraphFileFinder"
 import { ProjectFlow } from "../components/ProjectFlow"
 import { QuestionWorkbench } from "../components/QuestionWorkbench"
+import { PassageInspector } from "../components/PassageInspector"
 import { containingFolder, sliceProjectGraph } from "../graphInventory"
-import type { AskResponse, Brain, FileRec, GraphNode, KnowledgeIndex, Selection, TraceQuestion, TraceRecord } from "../types"
+import type { AskEvidence, AskResponse, Brain, FileRec, GraphNode, KnowledgeIndex, LinkReview, ReviewedLink, Selection, TraceQuestion, TraceRecord } from "../types"
 
 type Props = {
   brain: Brain
@@ -55,6 +56,19 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect, onOpenKn
   const [board, setBoard] = useState<{ project: string; items: TraceRecord[]; history: TraceRecord[] } | null>(null)
   const [questionsWarning, setQuestionsWarning] = useState("")
   const [boardWarning, setBoardWarning] = useState<{ project: string; text: string } | null>(null)
+  const [pickedCites, setPickedCites] = useState<AskEvidence[]>([])
+  const [compareCites, setCompareCites] = useState(false)
+  const citationButton = useRef<HTMLButtonElement | null>(null)
+  const [mapEvidence, setMapEvidence] = useState<{ passage: AskEvidence; origin: string; mode: MapMode; focus: string | null;
+    revealed: typeof revealed; cluster: typeof clusterSelection } | null>(null)
+  const [linkBoard, setLinkBoard] = useState<{ project: string; result: LinkReview; checked: boolean; scan: string } | null>(null)
+  const [linkError, setLinkError] = useState("")
+  const [linkBusy, setLinkBusy] = useState(false)
+  const [linkPicked, setLinkPicked] = useState<{ project: string; id: string } | null>(null)
+  const activeLinks = linkBoard?.project === focus && linkBoard.scan === brain.scanned_at ? linkBoard : null
+  const selectedLink = linkPicked?.project === focus ? [...(activeLinks?.result.suggested ?? []), ...(activeLinks?.result.kept ?? [])]
+    .find((item) => item.id === linkPicked.id) : undefined
+  const mapped = mapEvidence?.passage.project_id === focus ? mapEvidence : null
   const knowledgePages = knowledge?.pages
   const records = !brain.privacy && focus && board?.project === focus ? board.items : EMPTY_RECORDS
   const history = !brain.privacy && focus && board?.project === focus ? board.history : EMPTY_RECORDS
@@ -62,6 +76,15 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect, onOpenKn
   const revealedFile = revealed?.project === focus ? projectFiles.find((file) => file.id === revealed.id) : undefined
   const previousFolder = folderScope?.project === focus ? folderScope.path : null
   const visibleFolder = revealedFile ? containingFolder(revealedFile.rel) : previousFolder
+
+  useEffect(() => {
+    if (!focus) return
+    let active = true
+    void getLinkReview(focus).then((result) => {
+      if (active) setLinkBoard((prior) => ({ project: focus, result, checked: prior?.project === focus && prior.checked, scan: brain.scanned_at }))
+    }).catch((error: Error) => { if (active) setLinkError(error.message) })
+    return () => { active = false }
+  }, [focus, brain.scanned_at, brain.privacy])
 
   useEffect(() => {
     let active = true
@@ -120,6 +143,19 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect, onOpenKn
           source: ref.direction === "read" ? asset.id : script.id, target: ref.direction === "read" ? script.id : asset.id,
           label: `${ref.direction === "read" ? "Reads" : "Writes"} · script line ${ref.line}` })
       }
+      const kept = activeLinks?.result.kept ?? []
+      const priority = selectedLink ? [selectedLink, ...kept.filter((item) => item.id !== selectedLink.id)] : kept
+      for (const item of priority.slice().reverse()) {
+        const [from, to] = item.ends.map((end) => fileNodes.get(end.id))
+        if (from && to) extraEdges.unshift({ id: `${item.id === selectedLink?.id ? "review-focus:" : ""}${item.state === "kept" ? "reviewed-link:" : "suggested-link:"}${item.id}`,
+          source: from.id, target: to.id, label: item.state === "kept" ? "Related · reviewed" : "Related · suggestion" })
+      }
+      const source = mapped && fileNodes.get(mapped.passage.id)
+      if (source) {
+        sourceNodes.unshift({ id: "recorded-passage-origin", label: mapped.origin, sub: "Recorded citation", kind: "question",
+          project_id: focus, file_id: null, service_id: null })
+        extraEdges.unshift({ id: "evidence-focus:origin", source: "recorded-passage-origin", target: source.id, label: "Cites this passage" })
+      }
       for (const [prefix, kind, rows] of [["record", "decision", records.filter((row) => row.kind === "decision")],
         ["watch", "question", !brain.privacy ? questions.filter((row) => row.state === "following" && row.scope.some((scope) => scope.id === focus)) : []]] as const) {
         for (const row of rows.slice(0, 25)) {
@@ -156,11 +192,12 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect, onOpenKn
       }
     }
     return { nodes: sourceNodes, edges: sourceEdges.filter((edge) => {
+      if (/^(evidence-focus:|review-focus:)/.test(edge.id)) return true
       const kind = /^(e:svc:|e:svcroot:|workflow:)/.test(edge.id) || edge.label === "mentions" ? "inferred" :
-        edge.id.startsWith("knowledge-") ? "knowledge" : "indexed"
-      return links === "all" || (links === kind)
+        /^(knowledge-|reviewed-link:)/.test(edge.id) ? "knowledge" : "indexed"
+      return links === "all" || links === kind
     }) }
-  }, [graph, activeFilter, knowledgePages, focus, links, dimension, projectFiles, records, questions, brain.privacy])
+  }, [graph, activeFilter, knowledgePages, focus, links, dimension, projectFiles, records, questions, brain.privacy, mapped, activeLinks, selectedLink])
   const revealedNode = revealedFile && (flow.nodes.find((node) => node.id === `n:${revealedFile.id}`) ??
     flow.nodes.find((node) => node.file_id === revealedFile.id && node.kind !== "decision"))
   const selectedNodeId = revealedNode?.id ?? (clusterSelection?.project === focus && flow.nodes.some((node) => node.id === clusterSelection.id)
@@ -169,10 +206,32 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect, onOpenKn
     [focus, flow, projectFiles, visibleFolder, activeFilter, selectedNodeId])
   const drawn = projectSlice ?? flow
   const accessibleNodes = drawn.nodes.filter((node) => `${node.label} ${node.sub || ""}`.toLowerCase().includes(query.trim().toLowerCase()))
-  function revealFile(file: FileRec) { setRevealed({ project: focus, id: file.id }); setClusterSelection(null) }
-  function clearSelection() { setRevealed(null); setClusterSelection(null) }
+  function revealFile(file: FileRec) { setMapEvidence(null); setLinkPicked(null); setRevealed({ project: focus, id: file.id }); setClusterSelection(null) }
+  function clearSelection() { setMapEvidence(null); setLinkPicked(null); setRevealed(null); setClusterSelection(null) }
   function showTrace(id: string) { setTraceTarget(id); setMode("trace") }
+  function showPassage(item: AskEvidence, origin: string) {
+    const file = brain.files.find((row) => row.id === item.id && row.project_id === item.project_id)
+    if (!file) return
+    setMapEvidence({ passage: item, origin, mode, focus, revealed, cluster: clusterSelection })
+    setLinkPicked(null); setRevealed({ project: file.project_id, id: file.id }); setClusterSelection(null)
+    onFocus(file.project_id); setMode("explore")
+    document.getElementById("brain-map")?.scrollIntoView({ block: "start" })
+  }
+  function selectSuggested(item: ReviewedLink) {
+    setMapEvidence(null); setLinkPicked({ project: focus!, id: item.id })
+    setRevealed({ project: focus, id: item.ends[0].id }); setClusterSelection(null)
+  }
+  function readCitation(item: AskEvidence, button: HTMLButtonElement) {
+    citationButton.current = button
+    setPickedCites((seen) => !compareCites ? [item] : seen.includes(item) ? seen : [...seen.slice(-1), item])
+  }
   function selectNode(node: GraphNode) {
+    if (mapped && (node.file_id === mapped.passage.id || node.id === "recorded-passage-origin")) {
+      document.getElementById("map-passage")?.focus(); return
+    }
+    if (selectedLink && selectedLink.ends.some((end) => end.id === node.file_id)) {
+      document.getElementById("link-passage")?.focus(); return
+    }
     if (mode === "explore" && (focus || dimension === "3d")) {
       const file = revealedFile && projectFiles.find((item) => item.id === node.file_id)
       if (file) revealFile(file)
@@ -204,6 +263,7 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect, onOpenKn
     try {
       const result = await ask(text, focus, focus ? undefined : selectedProjects)
       setReply(result)
+      setPickedCites([]); setCompareCites(false)
       setAskedAt(brain.scanned_at)
       setLastAsked(result.scope?.length ? { question: text, project_ids: result.scope } : null)
     } catch (error) {
@@ -235,7 +295,7 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect, onOpenKn
         </div>
         <div className="bp-toolbar brain-mode-nav" role="group" aria-label="Brain map mode">
           {MODES.map(([id, label]) => <button key={id} type="button" className={mode === id ? "on" : ""} aria-pressed={mode === id}
-            onClick={() => { setTraceTarget(undefined); setMode(id) }}>{label}</button>)}
+            onClick={() => { setTraceTarget(undefined); setMapEvidence(null); setMode(id) }}>{label}</button>)}
         </div>
         {mode === "explore" && <><div className="bp-toolbar">
           <button type="button" aria-pressed={dimension === "2d"} className={dimension === "2d" ? "on" : ""} onClick={() => setDimension("2d")}>2D</button>
@@ -251,6 +311,49 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect, onOpenKn
             <option value="inferred">Inferred references</option>
           </select></label>
         </div>
+        {mapped && <div id="map-passage" className="brain-map-panel" tabIndex={-1} aria-label="Mapped passage">
+          <strong>{mapped.origin} → cited source</strong>
+          <PassageInspector item={mapped.passage} available={!!revealedFile} changed={askedAt !== brain.scanned_at} />
+          <button type="button" className="ghost" onClick={() => {
+            setMapEvidence(null); setRevealed(mapped.revealed); setClusterSelection(mapped.cluster)
+            onFocus(mapped.focus); setMode(mapped.mode)
+          }}>Back from citation</button>
+          {revealedFile && <button type="button" className="ghost" onClick={() => onSelect({ kind: "file", id: revealedFile.id })}>Open current file separately</button>}
+        </div>}
+        {focus && <details className="brain-map-panel"><summary>Review suggested links</summary>
+          <p className="quiet">Checks indexed Markdown previews for unusual shared terms in two passages. Suggestions mean related, not supporting or contradicting. No source files change.</p>
+          <button type="button" className="ghost" disabled={linkBusy} onClick={async () => {
+            setLinkBusy(true); setLinkError("")
+            try { setLinkBoard({ project: focus, result: await getLinkReview(focus), checked: true, scan: brain.scanned_at }) }
+            catch (err) { setLinkError(err instanceof Error ? err.message : "Could not check links.") }
+            finally { setLinkBusy(false) }
+          }}>Check suggested links</button>
+          {linkError && <p role="status">{linkError}</p>}
+          {activeLinks?.checked && <>
+            {activeLinks.result.limited && <p className="quiet">This shortlist is bounded: up to 250 notes and 25 pending suggestions.</p>}
+            {activeLinks.result.unavailable_kept > 0 && <p className="quiet">Some reviewed links are not drawn because their original evidence no longer matches.</p>}
+            {!activeLinks.result.suggested.length && <p>No new candidates in the checked previews.</p>}
+            {[...activeLinks.result.suggested, ...activeLinks.result.kept].map((item) => <button key={item.id} type="button" className="brain-diagram-card"
+              aria-pressed={selectedLink?.id === item.id} onClick={() => selectSuggested(item)}>
+              {item.ends.map((end) => end.label).join(" ↔ ")} · {item.state}</button>)}
+          </>}
+        </details>}
+        {selectedLink && <aside id="link-passage" tabIndex={-1} className="brain-map-panel" aria-label="Suggested link passages">
+          <strong>{selectedLink.state === "kept" ? "Reviewed relationship" : "Suggested relationship"}: Related</strong>
+          <p>{selectedLink.reason}</p><div className="passage-grid">{selectedLink.ends.map((end) => <article key={end.id} className="knowledge-card passage-inspector">
+            <strong>{end.label}</strong><blockquote>{end.excerpt}</blockquote></article>)}</div>
+          {selectedLink.state === "suggested" && (["kept", "dismissed"] as const).map((state) => <button type="button" key={state} className="ghost" disabled={linkBusy}
+            onClick={async () => {
+              if (!focus) return
+              setLinkBusy(true); setLinkError("")
+              try {
+                setLinkBoard({ project: focus, result: await getLinkReview(focus, { id: selectedLink.id, state }), checked: true, scan: brain.scanned_at })
+                if (state === "dismissed") clearSelection()
+              } catch (err) { setLinkError(err instanceof Error ? err.message : "Could not save your review.") }
+              finally { setLinkBusy(false) }
+            }}>{state === "kept" ? "Keep link" : "Dismiss link"}</button>)}
+          <button type="button" className="ghost" onClick={clearSelection}>Clear link focus</button>
+        </aside>}
         {focus && projectSlice && <GraphFileFinder key={focus} files={projectFiles}
           project={brain.projects.find((item) => item.id === focus)?.name ?? focus}
           folder={visibleFolder} revealed={revealedFile} onReveal={revealFile} onFolder={(path) => {
@@ -277,11 +380,11 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect, onOpenKn
           <span>{focus ? "Select a file to preview it and highlight its neighbours." : "Choose a project hub on the map or above to reveal its files."}</span></div>}
         </>}
         {mode === "trace" && <BrainTrace key={`${focus ?? "all"}:${traceTarget ?? "pick"}:${brain.signature ?? brain.scanned_at}`}
-          focus={focus} files={brain.files} pages={knowledgePages ?? []} records={records} history={history}
+           focus={focus} files={brain.files} pages={knowledgePages ?? []} savedAnswers={knowledge?.answers ?? []} records={records} history={history}
           watches={brain.privacy ? [] : questions} preferred={traceTarget}
           warning={(boardWarning?.project === focus ? boardWarning?.text : "") || (!brain.privacy ? questionsWarning : "")}
-          ask={reply && lastAsked && (!focus || lastAsked.project_ids.includes(focus)) ? { title: lastAsked.question, answer: reply.answer,
-            when: askedAt, evidence: reply.evidence ?? [] } : null} onFocus={onFocus} onFile={(id) => onSelect({ kind: "file", id })} />}
+           ask={reply && lastAsked && (!focus || lastAsked.project_ids.includes(focus)) ? { title: lastAsked.question, answer: reply.answer,
+             when: askedAt, evidence: reply.evidence ?? [] } : null} onFocus={onFocus} onFile={(id) => onSelect({ kind: "file", id })} onMap={showPassage} />}
         {mode === "replay" && <BrainReplay key={focus ?? "all"} brain={brain} project={focus} impacts={knowledge?.source_impact ?? []} records={records}
           onFile={(id) => onSelect({ kind: "file", id })} onKnowledge={onOpenKnowledge} onDecision={(id) => showTrace(`record:${id}`)} />}
         {mode === "flow" && (focus ? <ProjectFlow key={focus} files={projectFiles} onFile={(id) => onSelect({ kind: "file", id })} /> :
@@ -303,14 +406,29 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect, onOpenKn
       >
         {reply && (
           <div className="ask-answer">
-            <p>{reply.answer}</p>
+            <div className={pickedCites.length ? "passage-grid" : undefined}><p>{reply.answer}</p>
+              {!!pickedCites.length && <aside aria-label="Citation comparison">
+                <button type="button" className="ghost" onClick={() => {
+                  setPickedCites([]); setCompareCites(false); citationButton.current?.focus()
+                }}>Close citation pane</button>
+                <button type="button" className="ghost" aria-pressed={compareCites} onClick={() => {
+                  setCompareCites(!compareCites); if (compareCites) setPickedCites((items) => items.slice(-1))
+                }}>Compare two passages</button>
+                {compareCites && <p className="quiet">Choose another citation below. Compare what each actually says; no support or disagreement is assumed.</p>}
+                <div className={pickedCites.length > 1 ? "passage-grid" : undefined}>{pickedCites.map((item, index) => {
+                  const indexed = item.kind === "file" ? brain.files.some((file) => file.id === item.id) : undefined
+                  return <div key={index}><PassageInspector item={item} available={indexed} changed={!!askedAt && askedAt !== brain.scanned_at} />
+                    {indexed && <button type="button" className="ghost" onClick={() => showPassage(item, lastAsked?.question ?? "Ask answer")}>Reveal passage on map</button>}</div>
+                })}</div>
+              </aside>}
+            </div>
             <div className="cite-row">
               <span className="quiet">{reply.provider === "heuristic" ? "Local index" : reply.provider}</span>
               {!!reply.evidence?.length && <button type="button" className="ghost" onClick={() => {
                 showTrace("ask"); document.getElementById("brain-map")?.scrollIntoView({ block: "start" })
               }}>Trace this answer</button>}
               {reply.citations.map((cite) => (
-                <button key={cite.id} type="button" onClick={() => onSelect({ kind: "file", id: cite.id })}>
+                <button key={cite.id} type="button" onClick={(event) => readCitation(reply.evidence?.find((item) => item.id === cite.id) ?? { ...cite, excerpt: "" }, event.currentTarget)}>
                   {cite.label}
                 </button>
               ))}
@@ -330,30 +448,30 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect, onOpenKn
               <strong>Evidence from {new Set(reply.evidence.map((item) => item.project_id)).size} project(s)</strong>
               <p className="quiet">Different links are not necessarily independent sources.</p>
               {reply.evidence.map((item) => <div key={`${item.id}:${item.page ?? ""}`}>
-                {item.source_url ? <p><a href={item.source_url} target="_blank" rel="noreferrer">{item.label}</a> — {item.excerpt}</p>
-                  : <button type="button" onClick={() => item.kind === "file" ? onSelect({ kind: "file", id: item.id }) : onFocus(item.project_id)}>
-                    {item.label}{item.stale ? " · needs recheck" : ""}{item.semantic ? " · local similarity" : ""}{item.derived ? " · derived, not independent evidence" : ""} — {item.excerpt}
-                  </button>}
+                 <button type="button" onClick={(event) => readCitation(item, event.currentTarget)}>
+                   {item.label}{item.page ? ` · page ${item.page}` : ""}{item.stale ? " · needs recheck" : ""}{item.semantic ? " · local similarity" : ""}{item.derived ? " · derived, not independent evidence" : ""} — {item.excerpt}
+                 </button>
                 {!!item.repeated_count && <details><summary>{item.repeated_count} related citation(s) grouped · {item.evidence_basis?.join(", ")}</summary>
                   {item.confirmed_origin && <p>Recorded original: <a href={item.confirmed_origin} target="_blank" rel="noreferrer">{item.confirmed_origin}</a></p>}
                   {item.repeated_sources?.map((copy) => <p key={`${copy.id}:${copy.page ?? ""}`}>
-                    {copy.source_url ? <a href={copy.source_url} target="_blank" rel="noreferrer">{copy.label}</a> : <button type="button"
-                      onClick={() => onSelect({ kind: "file", id: copy.id })}>{copy.label}</button>} — {copy.excerpt}</p>)}
+                     <button type="button" onClick={(event) => readCitation(copy, event.currentTarget)}>{copy.label}</button> — {copy.excerpt}</p>)}
                   <p className="quiet">Grouped links do not count as separate evidence. Ungrouped links are not proven independent.</p>
                 </details>}
               </div>)}
             </div> : null}
             {!brain.privacy && lastAsked && <button type="button" className="ghost" onClick={() =>
               document.getElementById("question-workbench")?.scrollIntoView({ block: "start" })}>Follow this question or revisit an old idea</button>}
-            {!reply.local_only_evidence && reply.evidence?.some((item) => item.kind === "file") && <button type="button" className="ghost" onClick={async () => {
+            {!reply.local_only_evidence && reply.evidence?.some((item) => item.kind === "file") && <button type="button" className="ghost" disabled={askedAt !== brain.scanned_at} onClick={async () => {
               const title = window.prompt("Title for this saved answer", draft.slice(0, 80))
               if (!title) return
               const projectId = focus ?? reply.evidence?.find((item) => item.kind === "file")?.project_id
               if (!projectId) return
-              const sourceIds = [...new Set(reply.evidence?.filter((item) => item.kind === "file").map((item) => item.id))]
+              const fileEvidence = reply.evidence?.filter((item) => item.kind === "file").slice(0, 8) ?? []
+              const sourceIds = [...new Set(fileEvidence.map((item) => item.id))]
               try {
-                await saveAnswer(projectId, title, reply.answer, sourceIds)
+                await saveAnswer(projectId, title, reply.answer, sourceIds, fileEvidence.map(({ id, excerpt, page }) => ({ id, excerpt, page })))
                 setSaved("Saved under .brain/answers; originals unchanged.")
+                void fetchKnowledge().then(setKnowledge).catch(() => undefined)
               } catch (reason) { setSaved(reason instanceof Error ? reason.message : "Could not save answer") }
             }}>Save answer</button>}
             {saved && <p className="quiet">{saved}</p>}

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from backend.app import ask, clips, evidence, project_records
+from backend.app import ask, clips, evidence, project_records, knowledge
 from backend.app.redact import redact
 
 
@@ -53,6 +53,9 @@ def snapshot(root: Path, brain: dict, row: dict) -> dict:
     report = ask.answer(brain, f"{row['question']} {row['challenge']}", None, None, project_ids=[project["id"] for project in projects],
                         web_clips=clip_rows, origins=evidence.confirmed_origins(root), local_review=True)
     terms = [term.casefold() for term in row["challenge"].split(";") if len(term.strip()) >= 4]
+    files = {item["id"]: item for item in brain["files"]}
+    clip_hashes = {clips.reference(item["project_id"], item["id"]): clips.fingerprint(item) for item in clip_rows}
+    file_hashes = {}
     items = []
     for rep in report["evidence"]:
         copies = [rep, *rep.get("repeated_sources", [])]
@@ -67,8 +70,11 @@ def snapshot(root: Path, brain: dict, row: dict) -> dict:
             fingerprint = hashlib.sha256(excerpt.encode()).hexdigest()
             entry = {key: item[key] for key in ("id", "label", "kind", "project_id", "excerpt", "source_url", "page") if key in item}
             entry.update(source=source, fingerprint=fingerprint,
-                         challenge=any(term.strip() in excerpt.casefold() for term in terms))
+                          challenge=any(term.strip() in excerpt.casefold() for term in terms))
             if not any(prev["fingerprint"] == fingerprint or prev["source"] == source for prev in items):
+                if item["id"] in files and item["id"] not in file_hashes:
+                    file_hashes[item["id"]] = knowledge._fingerprint(root, files[item["id"]])
+                entry["source_sha256"] = file_hashes.get(item["id"]) or clip_hashes.get(item["id"])
                 items.append(entry)
             if len(items) >= 30:
                 break

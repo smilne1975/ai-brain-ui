@@ -26,6 +26,7 @@ from backend.app.ask import answer
 from backend.app.engine import Engine, Hub
 from backend.app.llm import resolve_provider
 from backend.app import agent_history, clips, deliverables, evidence, external_notes, knowledge, living_questions, meetings, obsidian, old_ideas, project_records, recall, scan_replay, voice, webhooks
+from backend.app import capture, review_links
 from backend.app.microstation import build_microstation
 from backend.app.microstation_config import build_config
 from backend.app.mcp_rpc import dispatch
@@ -93,11 +94,18 @@ class SkillBody(BaseModel):
     steps: str = Field(min_length=3, max_length=10000)
 
 
+class AnswerPassage(BaseModel):
+    id: str = Field(max_length=1000)
+    excerpt: str = Field(max_length=400)
+    page: int | None = Field(default=None, ge=1)
+
+
 class AnswerBody(BaseModel):
     project_id: str
     title: str = Field(min_length=2, max_length=120)
     answer: str = Field(min_length=2, max_length=10000)
     source_ids: list[str] = Field(min_length=1, max_length=8)
+    passages: list[AnswerPassage] = Field(default_factory=list, max_length=8)
 
 
 class MeetingBody(BaseModel):
@@ -128,6 +136,22 @@ class ClipApproval(ClipBody):
 
 class ClipState(BaseModel):
     active: bool
+
+
+class CaptureStage(BaseModel):
+    filename: str = Field(max_length=160)
+    text: str = Field(min_length=1, max_length=40_000)
+    kind: Literal["note", "link", "clip"]
+
+
+class CaptureChange(BaseModel):
+    action: Literal["approve", "undo", "remove"]
+    tags: str = Field(default="", max_length=200)
+    filing: str = Field(default="", max_length=150)
+
+
+class LinkReview(BaseModel):
+    state: Literal["kept", "dismissed"]
 
 
 class DeliverableBody(BaseModel):
@@ -546,6 +570,73 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="Folder is not in the scan")
         return engine, project
 
+    @app.get("/api/source-review/{project_id}")
+    def source_review(project_id: str):
+        engine, project = inbox_project(project_id)
+        brain = _require_brain(engine)
+        try:
+            decisions = [{**row, "project_id": project_id} for row in project_records.board(engine.root, brain, project)["items"]
+                         if row["kind"] == "decision" and row["state"] == "reviewed"]
+            impacts = knowledge.source_impact(engine.root, brain, knowledge.pages(engine.root, brain),
+                knowledge.answers(engine.root, brain), decisions, living_questions.list_questions(engine.root))
+            return {"items": [row for row in impacts if any(item["project_id"] == project_id for item in row["affected"])],
+                    "limited": bool(brain.get("truncated") or brain.get("coverage", {}).get("issues"))}
+        except (ValueError, sqlite3.Error, OSError):
+            raise HTTPException(status_code=409, detail="Could not read all local review records") from None
+
+    @app.get("/api/link-review/{project_id}")
+    def link_suggestions(project_id: str):
+        engine: Engine = app.state.engine
+        brain = _require_brain(engine)
+        try:
+            return review_links.listing(engine.root, brain, knowledge._project(brain, project_id))
+        except (ValueError, sqlite3.Error, OSError):
+            raise HTTPException(status_code=409, detail="Could not read link suggestions for this project") from None
+
+    @app.post("/api/link-review/{project_id}/{identifier}")
+    def review_link(project_id: str, identifier: str, body: LinkReview, request: Request):
+        _require_local_origin(request)
+        engine: Engine = app.state.engine
+        brain = _require_brain(engine)
+        try:
+            return review_links.review(engine.root, brain, knowledge._project(brain, project_id), identifier, body.state)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
+        except (sqlite3.Error, OSError):
+            raise HTTPException(status_code=409, detail="Could not save your link review") from None
+
+    @app.get("/api/captures/{project_id}")
+    def captures(project_id: str):
+        engine, project = inbox_project(project_id)
+        try:
+            return {"items": capture.listing(engine.root, project)}
+        except (ValueError, sqlite3.Error, OSError):
+            raise HTTPException(status_code=409, detail="Could not read the capture queue") from None
+
+    @app.post("/api/captures/{project_id}")
+    def stage_capture(project_id: str, body: CaptureStage, request: Request):
+        _require_local_origin(request)
+        engine, project = inbox_project(project_id)
+        try:
+            return capture.stage(engine.root, project, body.text, body.filename, body.kind)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        except (sqlite3.Error, OSError):
+            raise HTTPException(status_code=409, detail="Capture storage is unavailable") from None
+
+    @app.post("/api/captures/{project_id}/{identifier}")
+    def change_capture(project_id: str, identifier: str, body: CaptureChange, request: Request):
+        _require_local_origin(request)
+        engine, project = inbox_project(project_id)
+        try:
+            return capture.change(engine.root, project, identifier, body.action, body.tags, body.filing)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Capture or referenced clip not found") from None
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
+        except (sqlite3.Error, OSError):
+            raise HTTPException(status_code=409, detail="Could not update the capture") from None
+
     @app.get("/api/meetings/{project_id}")
     def meeting_items(project_id: str):
         engine, project = inbox_project(project_id)
@@ -859,7 +950,8 @@ def create_app() -> FastAPI:
         engine: Engine = app.state.engine
         brain = _require_brain(engine)
         try:
-            return knowledge.save_answer(engine.root, brain, body.project_id, body.title, body.answer, body.source_ids)
+            return knowledge.save_answer(engine.root, brain, body.project_id, body.title, body.answer, body.source_ids,
+                                         [item.model_dump() for item in body.passages])
         except StopIteration:
             raise HTTPException(status_code=404, detail="Folder is not in the scan") from None
         except ValueError as exc:

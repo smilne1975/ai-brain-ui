@@ -4,7 +4,7 @@ import { MAP_LINK_BUDGET, MAP_NODE_BUDGET } from "../graphInventory"
 import type { GraphEdge, GraphNode } from "../types"
 
 type Node3D = GraphNode & { x: number; y: number; z: number; val: number; color: string }
-type Link3D = { source: string | Node3D; target: string | Node3D; label: string; inferred: boolean }
+type Link3D = { source: string | Node3D; target: string | Node3D; label: string; inferred: boolean; passage: boolean }
 
 const endpoint = (node: string | Node3D) => typeof node === "string" ? node : node.id
 const PALETTE = ["#45ffac", "#6cd5ff", "#c7abff", "#f0c14a", "#ff9b91"]
@@ -63,8 +63,8 @@ export function Graph3D({ nodes, edges, query, selectedId, fitNodeId, scope, onN
               : node.kind === "note" ? "#d8ffeb" : "#68dca0" }
       }),
       links: edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target)).slice(0, MAP_LINK_BUDGET)
-        .map((edge): Link3D => ({ source: edge.source, target: edge.target, label: edge.label,
-          inferred: /^(e:svc:|e:svcroot:|workflow:)/.test(edge.id) || edge.label === "mentions" })),
+        .map((edge): Link3D => ({ source: edge.source, target: edge.target, label: edge.label, passage: edge.id.startsWith("evidence-focus:"),
+          inferred: /^(e:svc:|e:svcroot:|workflow:|review-focus:suggested-link:)/.test(edge.id) || edge.label === "mentions" })),
     }
   }, [nodes, edges, scope])
   const neighborhood = useMemo(() => {
@@ -98,7 +98,7 @@ export function Graph3D({ nodes, edges, query, selectedId, fitNodeId, scope, onN
         nodeColor={(node) => node.id === selectedId ? "#ffffff" : (selectedId ? !neighborhood.has(node.id) :
           q && !`${node.label} ${node.sub}`.toLowerCase().includes(q)) ? "#293e35" : node.color}
         nodeVal={(node) => node.val}
-        linkColor={(link) => selectedId && !isDirect(link) ? "#1c3229" : link.inferred ? "#f0c14a" : "#3dff9a"} linkOpacity={0.5}
+        linkColor={(link) => selectedId && !isDirect(link) ? "#1c3229" : link.passage ? "#c7abff" : link.inferred ? "#f0c14a" : "#3dff9a"} linkOpacity={0.5}
         linkLabel={(link) => escapeHtml(link.inferred ? `Inferred · ${link.label || "service reference"}` : String(link.label || "Indexed relationship"))}
         linkWidth={(link) => isDirect(link) ? 1.8 : 0.65} showNavInfo={false} warmupTicks={35} cooldownTicks={100}
         onNodeClick={(node) => onNodeClick(node as Node3D)}

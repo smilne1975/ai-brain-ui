@@ -60,3 +60,17 @@ test("selected nodes and their links are kept first within both render budgets",
   assert.equal(rendered.edges.filter((item) => item.source === target.id).length, MAP_NODE_BUDGET - 2)
   assert.equal(rendered.hiddenNeighbors, 239 - (MAP_NODE_BUDGET - 2))
 })
+
+test("focused passage and proposed pair take priority over a crowded file's ordinary links", () => {
+  const files = Array.from({ length: 240 }, (_, i) => file(`folder/${i}.md`))
+  const [target, paired] = files.slice(-2).map(node)
+  const origin = { id: "recorded-passage-origin", file_id: null, kind: "question" }
+  const graph = { nodes: [root, ...files.map(node), origin], edges: [
+    ...files.slice(0, -2).map((entry) => edge(target.id, node(entry).id)),
+    edge(origin.id, target.id, "cites", "evidence-focus:origin"), edge(target.id, paired.id, "suggested", "review-focus:suggested-link:pair"),
+  ] }
+  const rendered = sliceProjectGraph(graph, files, "unrelated", new Set(["script"]), target.id)
+  assert.deepEqual(rendered.edges.slice(0, 2).map((item) => item.id), ["evidence-focus:origin", "review-focus:suggested-link:pair"])
+  assert.ok(rendered.nodes.some((item) => item.id === paired.id))
+  assert.ok(rendered.nodes.some((item) => item.id === origin.id))
+})
