@@ -372,7 +372,7 @@ export default function App() {
           <div>
             <strong>{brain.provider.label}</strong>
             <p>
-              {brain.provider.mode === "heuristic"
+              {brain.privacy ? "Local-only. Agent sharing and exports are off." : brain.provider.mode === "heuristic"
                 ? "No model key in the environment."
                 : brain.summaries === "model"
                   ? "Folder summaries came from the model."
@@ -381,6 +381,9 @@ export default function App() {
           </div>
         </div>
         <p className="whisper">.env values are never read. Key names only.</p>
+        {brain.privacy && <p className="whisper" role="status">{brain.privacy === "invalid"
+          ? "Private-folder settings are invalid. No folders scanned."
+          : "Private-folder exclusions active. Rescan manually to refresh."}</p>}
         {brain.truncated && <p className="whisper">File cap reached. Some files were left out.</p>}
       </aside>
       <div className={focused ? "main has-focus" : "main"}>

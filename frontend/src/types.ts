@@ -17,6 +17,7 @@ export type Brief = {
   key_files: BriefFile[]
   run_command: string
   copy_text: string
+  reviewed_memory?: { items: { title: string; kind: string; text: string; references: string[] }[]; stale_count: number; unavailable?: boolean }
 }
 
 export type BriefBoard = { generated_at: string; source: string; briefs: Brief[] }
@@ -87,6 +88,7 @@ export type ChatIndex = {
 
 export type TimelineChat = {
   id: string
+  agent?: string
   title: string
   when: string | null
   prompt: string
@@ -125,6 +127,7 @@ export type Timeline = {
   project_count: number
   file_count: number
   weeks: TimelineWeek[]
+  agent_history_warning?: string
 }
 
 export type CardEntry = { path: string; how: string; kind: string }
@@ -285,6 +288,7 @@ export type FileRec = {
   todos: Todo[]
   symbols: { name: string; kind: string; decision: boolean }[]
   imports_local: string[]
+  workflow_refs?: { file_id: string; direction: "read" | "write"; line: number }[]
   intro: string
   title: string
 }
@@ -375,6 +379,9 @@ export type Brain = {
   summaries: string
   provider: ProviderInfo
   signature?: string
+  privacy?: "active" | "invalid"
+  coverage?: { counts: { skipped: number; unreadable: number; partial: number };
+    issues: { project_id: string; rel: string; status: string; reason: string }[] }
 }
 
 export type Selection =
@@ -383,23 +390,62 @@ export type Selection =
   | { kind: "project"; id: string }
   | { kind: "connection"; id: string }
 
+export type AskEvidence = { id: string; label: string; kind: string; project_id: string; excerpt: string; stale?: boolean;
+  page?: number; source_url?: string; semantic?: boolean; derived?: boolean; repeated_count?: number;
+  repeated_sources?: AskEvidence[]; evidence_basis?: string[]; confirmed_origin?: string }
+
 export type AskResponse = {
   answer: string
   citations: { id: string; label: string; kind: string; project_id: string }[]
   provider: string
-  evidence?: { id: string; label: string; kind: string; project_id: string; excerpt: string; stale?: boolean }[]
+  evidence?: AskEvidence[]
+  pdf_gaps?: { id: string; label: string; reason: string }[]
+  local_only_evidence?: boolean
+  external_note_warnings?: string[]
+  hybrid_warning?: string
   scope?: string[]
   incomplete?: boolean
 }
 
-export type KnowledgeSource = { id: string; rel: string; sha256: string; summary?: string }
+export type KnowledgeSource = { id: string; rel: string; sha256: string; summary?: string; title?: string; source_url?: string }
+export type ScanChange = { id: string; project_id: string; rel: string; state: "added" | "changed" | "unlisted" }
+export type ScanReplay = { disabled: boolean; frames: { id: number; at: string }[]; comparison: null | {
+  id: number; before: string | null; after: string; incomplete: boolean; omitted: number; changes: ScanChange[] } }
+export type TraceRecord = { id: string; revision: number; kind: string; state: string; title: string; text: string;
+  sources: KnowledgeSource[]; stale_sources?: string[]; updated_at: string }
+export type TraceQuestion = { id: string; question: string; state: string; scope: { id: string }[];
+  checked_at: string; reviewed: { items: AskEvidence[]; incomplete: boolean; missing_scopes: number } }
+export type MeetingItem = { line: number; kind: "decision" | "action"; text: string; excerpt: string; owner: string | null; due: string | null }
+export type SavedMeetingItem = MeetingItem & { source_id: string; source_name: string; approved_at: string }
+export type ClipDraft = { id: string; filename: string; url: string; title: string; content: string; captured_at: string | null }
+export type WebClip = ClipDraft & { active: boolean; imported_at: string }
+export type DeliverableEvidence = { id: string; title: string; revision: string; sha256: string; sources: KnowledgeSource[] }
+export type DeliverableDraft = { title: string; token: string; markdown: string; pages: DeliverableEvidence[] }
+export type DeliverableRecord = { id: string; title: string; artifact_path: string; created_at: string; pages: DeliverableEvidence[];
+  status: "current" | "reviewed" | "needs review"; snapshot: string;
+  changes: { label: string; kind: string; status: string }[]; reviews: { at: string }[] }
+export type WorkflowPayload = { id: string; type: string; project_key: string; created_at: string }
+export type WorkflowPreview = { payload: WorkflowPayload; destination: string; expires: number; confirmation: string }
+export type WorkflowEvent = { id: string; payload: WorkflowPayload; destination: string; status: "accepted" | "rejected" | "delivery unknown";
+  attempts: { at: string; status: string; http_status: number | null }[] }
+export type WorkflowBoard = { enabled: boolean; destination: string | null; events: WorkflowEvent[] }
+export type VoiceItem = { segment: number; start_ms: number; end_ms: number; excerpt: string; text: string; kind: "observation" | "action" }
+export type VoiceDraft = { id: string; filename: string; items: VoiceItem[] }
+export type VoiceNote = VoiceDraft & { approved_at: string }
+export type ObsidianPreview = { export_id: string; folder: string; paths: string[]; node_count: number; edge_count: number;
+  omitted_pages: number; unresolved_count: number; token: string }
 export type KnowledgePage = { project_id: string; page_id: string; title: string; topic?: string; revision: string; revisions: string[];
   sources: KnowledgeSource[]; content: string; stale_sources: string[]; updated_at: string }
 export type KnowledgePreview = { project_id: string; page_id: string; topic: string | null; source_ids: string[] | null; title: string; content: string; sources: KnowledgeSource[];
   changed_sources: string[]; missing_sources: string[]; current_revision: string | null; previous_content: string; warning: string }
 export type KnowledgeIndex = { pages: KnowledgePage[]; answers: { name: string; project_id: string; content: string;
   stale_sources: string[] }[]; findings: { project_id: string; kind: string; detail: string }[];
-  workflow_candidates: { project_id: string; name: string; count: number; examples: { session_id: string; text: string }[] }[] }
+  available_clips: { id: string; project_id: string; title: string }[];
+  source_impact: { source_id: string; rel: string; status: string;
+    affected: { kind: "page" | "answer"; project_id: string; id: string; label: string; move: { id: string; rel: string } | null }[] }[];
+  workflow_candidates: { project_id: string; name: string; count: number; sessions: number; outcome: "unverified" | "reported success";
+    suggested_steps?: string[]; examples: { session_id: string; text: string; when: string | null; files: string[];
+      run_outcome?: "success" | "failure" | "unknown"; evidence?: string }[] }[] }
 
 export const CATEGORY_COLOR: Record<string, string> = {
   Models: "#3dff9a",

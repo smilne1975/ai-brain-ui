@@ -69,7 +69,8 @@ export function TimelineView({ brain, data, loading, error, days, query, focus, 
           </button>
         ))}
       </div>
-      <p className="quiet tl-note">File dates come from save times. Copilot chats from this machine are listed on the same day. A folder that is its own git repo also shows commit subjects. Values in .env files are never read.</p>
+      <p className="quiet tl-note">File dates come from save times. Local Copilot and opted-in agent sessions are listed on the same day. A folder that is its own git repo also shows commit subjects. Values in .env files are never read.</p>
+      {data?.agent_history_warning && <p className="quiet tl-note">{data.agent_history_warning}</p>}
       {error && <p className="ask-error">{error}</p>}
       {loading && !data && <p className="empty-copy">Reading recent files…</p>}
       {!loading && !error && weeks.length === 0 && (
@@ -110,7 +111,7 @@ export function TimelineView({ brain, data, loading, error, days, query, focus, 
                       <ul className="tl-chats">
                         {project.chats.map((chat) => (
                           <li key={chat.id}>
-                            <i>chat</i>
+                            <i>{chat.agent ?? "chat"}</i>
                             <strong>{chat.prompt || chat.title}</strong>
                             <span>{chat.summary}</span>
                             {chat.files.length > 0 && <em>{chat.files.map((file) => file.rel).join(" · ")}</em>}

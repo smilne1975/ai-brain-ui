@@ -100,7 +100,7 @@ def build_timeline(root: Path, brain: dict, days: int, now: datetime | None = No
     for project in projects:
         group = files_by_project.get(project["id"], [])
         indexed = {rec["rel"]: rec for rec in group}
-        commits = _git_commits(_project_dir(root, project))
+        commits = _visible_commits(root, project)
         for rec in group:
             when = _file_when(root, project, rec, now)
             if when is None or when < cutoff or when > now + timedelta(minutes=5):
@@ -516,7 +516,7 @@ def _last_touched(root: Path, project: dict, files: list[dict], now: datetime) -
         when = _file_when(root, project, rec, now)
         if when is not None:
             moments.append(when)
-    commits = _git_commits(_project_dir(root, project), limit=1)
+    commits = _visible_commits(root, project, limit=1)
     for commit in commits:
         when = commit.get("when")
         if isinstance(when, datetime):
@@ -804,6 +804,13 @@ def _unique_commits(commits: list[dict]) -> list[dict]:
     return unique[:8]
 
 
+def _visible_commits(root: Path, project: dict, limit: int = 40) -> list[dict]:
+    from backend.app.privacy import active
+
+    # A Git subject or renamed path can still mention an excluded folder.
+    return [] if active() else _git_commits(_project_dir(root, project), limit)
+
+
 def _git_commits(project_dir: Path, limit: int = 40) -> list[dict]:
     git_dir = project_dir / ".git"
     if not git_dir.exists():
@@ -898,7 +905,8 @@ def _indexed_text(root: Path, project: dict, rec: dict, limit: int = 20000) -> s
     if path is None:
         return rec.get("excerpt") or ""
     try:
-        raw = path.read_bytes()[:limit]
+        with path.open("rb") as handle:
+            raw = handle.read(limit)
     except OSError:
         return rec.get("excerpt") or ""
     if b"\x00" in raw[:1024]:
@@ -907,13 +915,16 @@ def _indexed_text(root: Path, project: dict, rec: dict, limit: int = 20000) -> s
 
 
 def _safe_file(root: Path, project: dict, rel: str) -> Path | None:
+    from backend.app.scanner import _resolve_under_root
+
     if not rel or rel.startswith(("/", "\\")) or ".." in Path(rel).parts:
         return None
     base = _project_dir(root, project)
-    candidate = (base / rel).resolve()
+    candidate = _resolve_under_root(root, {"project_rel": project.get("rel"), "rel": rel})
+    if candidate is None:
+        return None
     try:
         candidate.relative_to(base)
-        candidate.relative_to(root.resolve())
     except ValueError:
         return None
     if not candidate.is_file():

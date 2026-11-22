@@ -13,7 +13,8 @@ from pathlib import Path
 
 from backend.app.llm import public_provider, resolve_provider, summarize_projects
 from backend.app.scanner import build_brain, ignored_dir_name, signature
-from backend.app import store
+from backend.app.privacy import active as private_folders_active, policy as privacy_policy
+from backend.app import scan_replay, store
 
 log = logging.getLogger("brain")
 
@@ -88,7 +89,7 @@ class Engine:
         except FileNotFoundError:
             log.warning(self.error)
             return
-        if os.getenv("BRAIN_DISABLE_WATCH") != "1":
+        if not private_folders_active() and os.getenv("BRAIN_DISABLE_WATCH") != "1":
             self._start_watch()
 
     def close(self) -> None:
@@ -169,7 +170,7 @@ class Engine:
         if self.error:
             payload["error"] = self.error
         brain = self.brain
-        if brain and phase == "ready":
+        if brain and phase == "ready" and brain.get("private_policy") == privacy_policy(self.root).token:
             payload.update(
                 {
                     "root": brain["root"],
@@ -312,9 +313,15 @@ class Engine:
         brain["provider"] = public_provider()
         self._apply_cached_summaries(brain)
         store.save_scan(self.root, sig, brain)
+        try:
+            scan_replay.record(self.root, brain)
+        except Exception:
+            log.exception("scan replay snapshot could not be saved")
         return brain
 
     def _apply_cached_summaries(self, brain: dict) -> None:
+        if brain.get("private_policy"):
+            return
         raw = store.load_llm(self._summary_key(brain))
         if not raw:
             return

@@ -38,6 +38,11 @@ def _connect() -> sqlite3.Connection:
         )
         """
     )
+    conn.execute("""CREATE TABLE IF NOT EXISTS scan_frames (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, root TEXT NOT NULL, scanned_at TEXT NOT NULL,
+        manifest TEXT NOT NULL, truncated INTEGER NOT NULL
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS scan_frames_root ON scan_frames (root, id)")
     return conn
 
 
