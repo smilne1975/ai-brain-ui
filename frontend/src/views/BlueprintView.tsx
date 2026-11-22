@@ -313,7 +313,8 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect, onOpenKn
         </div>
         {mapped && <div id="map-passage" className="brain-map-panel" tabIndex={-1} aria-label="Mapped passage">
           <strong>{mapped.origin} → cited source</strong>
-          <PassageInspector item={mapped.passage} available={!!revealedFile} changed={askedAt !== brain.scanned_at} />
+          <PassageInspector item={mapped.passage} available={!!revealedFile}
+            changed={!!askedAt && askedAt !== brain.scanned_at && (reply?.evidence ?? []).includes(mapped.passage)} />
           <button type="button" className="ghost" onClick={() => {
             setMapEvidence(null); setRevealed(mapped.revealed); setClusterSelection(mapped.cluster)
             onFocus(mapped.focus); setMode(mapped.mode)
@@ -379,12 +380,15 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect, onOpenKn
         {dimension === "3d" && <div className="brain-map-caption"><strong>{focus ? brain.projects.find((item) => item.id === focus)?.name : "Project constellation"}</strong>
           <span>{focus ? "Select a file to preview it and highlight its neighbours." : "Choose a project hub on the map or above to reveal its files."}</span></div>}
         </>}
-        {mode === "trace" && <BrainTrace key={`${focus ?? "all"}:${traceTarget ?? "pick"}:${brain.signature ?? brain.scanned_at}`}
-           focus={focus} files={brain.files} pages={knowledgePages ?? []} savedAnswers={knowledge?.answers ?? []} records={records} history={history}
-          watches={brain.privacy ? [] : questions} preferred={traceTarget}
-          warning={(boardWarning?.project === focus ? boardWarning?.text : "") || (!brain.privacy ? questionsWarning : "")}
-           ask={reply && lastAsked && (!focus || lastAsked.project_ids.includes(focus)) ? { title: lastAsked.question, answer: reply.answer,
-             when: askedAt, evidence: reply.evidence ?? [] } : null} onFocus={onFocus} onFile={(id) => onSelect({ kind: "file", id })} onMap={showPassage} />}
+        {(mode === "trace" || mapped?.mode === "trace") && (() => {
+          const traceFocus = mapped?.mode === "trace" ? mapped.focus : focus
+          return <div hidden={mode !== "trace"}><BrainTrace key={`${traceFocus ?? "all"}:${traceTarget ?? "pick"}:${brain.signature ?? brain.scanned_at}`}
+            focus={traceFocus} files={brain.files} pages={knowledgePages ?? []} savedAnswers={knowledge?.answers ?? []} records={records} history={history}
+            watches={brain.privacy ? [] : questions} preferred={traceTarget}
+            warning={(boardWarning?.project === traceFocus ? boardWarning?.text : "") || (!brain.privacy ? questionsWarning : "")}
+            ask={reply && lastAsked && (!traceFocus || lastAsked.project_ids.includes(traceFocus)) ? { title: lastAsked.question, answer: reply.answer,
+              when: askedAt, evidence: reply.evidence ?? [] } : null} onFocus={onFocus} onFile={(id) => onSelect({ kind: "file", id })} onMap={showPassage} /></div>
+        })()}
         {mode === "replay" && <BrainReplay key={focus ?? "all"} brain={brain} project={focus} impacts={knowledge?.source_impact ?? []} records={records}
           onFile={(id) => onSelect({ kind: "file", id })} onKnowledge={onOpenKnowledge} onDecision={(id) => showTrace(`record:${id}`)} />}
         {mode === "flow" && (focus ? <ProjectFlow key={focus} files={projectFiles} onFile={(id) => onSelect({ kind: "file", id })} /> :

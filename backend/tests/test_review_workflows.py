@@ -1,5 +1,8 @@
+import base64
 import json
+import struct
 import time
+import zlib
 
 from fastapi.testclient import TestClient
 
@@ -179,3 +182,61 @@ def test_group_refresh_is_read_only_until_approval_and_never_partially_commits(t
         assert json.loads(record.read_text(encoding="utf-8"))["token"] == plan["token"]
         assert client.get(endpoint).json()["items"] == []
         assert source.read_text(encoding="utf-8") == "Transcription calibration now needs another reviewer."
+
+
+def test_screenshot_queue_is_local_scoped_bounded_and_never_returns_image_in_list(tmp_path, monkeypatch):
+    note(tmp_path, "work/README.md", "Neutral project note.")
+    note(tmp_path, "other/README.md", "Another project.")
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
+           + chunk(b"IDAT", zlib.compress(b"\x00\x22\x33\x44")) + chunk(b"IEND", b""))
+    encoded = base64.b64encode(png).decode()
+    with app_for(tmp_path, monkeypatch) as client:
+        ready(client)
+        endpoint = "/api/capture-images/work"
+        body = {"filename": "screenshot.png", "data": encoded}
+        assert client.post(endpoint, json=body, headers={"Origin": "https://example.com"}).status_code == 403
+        assert client.post(endpoint, json={**body, "data": base64.b64encode(png + b"trailing text").decode()}).status_code == 400
+        assert client.post(endpoint, json={**body, "data": base64.b64encode(png[:-6]).decode()}).status_code == 400
+        image = client.post(endpoint, json=body).json()["item"]
+        assert image["kind"] == "image" and image["width"] == image["height"] == 1 and "png_data" not in image
+        assert client.post(endpoint, json=body).json()["status"] == "duplicate"
+        locator = f"/api/captures/work/{image['id']}"
+        response = client.get(locator + "/image")
+        assert response.status_code == 200 and response.content == png and response.headers["content-type"] == "image/png"
+        assert response.headers["cache-control"] == "no-store"
+        assert client.get(locator.replace("/work/", "/other/") + "/image").status_code == 404
+        assert encoded not in client.get("/api/captures/work").text
+        assert client.post(locator, json={"action": "approve", "tags": "calibration"}).json()["item"]["tags"] == "calibration"
+        assert client.post(locator, json={"action": "undo"}).json()["item"]["state"] == "staged"
+        assert client.post(locator, json={"action": "remove"}).json()["removed"]
+        assert client.get(locator + "/image").status_code == 404
+
+
+def test_draft_warns_about_opposite_requirements_only_with_distinct_verified_quotes(tmp_path):
+    first = "Reviewers must retain the original audio."
+    opposite = "Reviewers are not required to retain the original audio."
+    conditional = "Reviewers must not retain the original audio if the participant opts out."
+    first_path = note(tmp_path, "work/procedure.md", first)
+    note(tmp_path, "work/recording.md", f"{opposite}\n{conditional}")
+    brain = scanner.build_brain(tmp_path)
+    before = knowledge.preview(tmp_path, brain, "work", "Procedure", ["work:procedure.md"])
+    knowledge.approve(tmp_path, brain, "work", f'# Procedure\n\n> "{first}" — `procedure.md`', None,
+                      {src["id"]: src["sha256"] for src in before["sources"]}, "Procedure", ["work:procedure.md"])
+    after = knowledge.preview(tmp_path, brain, "work", "Recording", ["work:recording.md"])
+
+    def findings(wording):
+        return knowledge.review(tmp_path, brain, "work", f'# Recording\n\n> "{wording}" — `recording.md`', None,
+                                {src["id"]: src["sha256"] for src in after["sources"]}, "Recording", ["work:recording.md"])
+
+    [hit] = [row for row in findings(opposite) if row["kind"] == "possible_prose_conflict"]
+    assert not hit["blocking"] and all(value in hit["detail"] for value in (first, opposite, "procedure.md", "recording.md"))
+    assert not any(row["kind"] == "possible_prose_conflict" for row in findings(conditional))
+    fabricated = findings("Reviewers must not retain the original audio.")
+    assert any(row["kind"] == "unverified_quote" and row["blocking"] for row in fabricated)
+    assert not any(row["kind"] == "possible_prose_conflict" for row in fabricated)
+    first_path.write_text("The old proposal was removed.", encoding="utf-8")
+    assert not any(row["kind"] == "possible_prose_conflict" for row in findings(opposite))

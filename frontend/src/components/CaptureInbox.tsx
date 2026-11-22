@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react"
-import { changeCapture, getCaptures, stageCapture } from "../api"
+import { changeCapture, getCaptures, stageCapture, stageCaptureImage } from "../api"
 import type { CaptureItem, CaptureReceipt, FileRec } from "../types"
 
-type Receipt = { id: number; file: File; value?: CaptureReceipt; error?: string }
+type Receipt = { id: number; file: File; value?: CaptureReceipt; error?: string; voice?: boolean }
 
 function errorText(err: unknown) { return err instanceof Error ? err.message : "Could not read this item." }
 
-export function CaptureInbox({ project, notes, onChange }: { project: string; notes: FileRec[]; onChange: () => void }) {
+export function CaptureInbox({ project, notes, onChange, onVoice }: { project: string; notes: FileRec[]; onChange: () => void;
+  onVoice: (file: File) => void }) {
   const [items, setItems] = useState<CaptureItem[]>([])
   const [paste, setPaste] = useState("")
   const [receipts, setReceipts] = useState<Receipt[]>([])
@@ -40,7 +41,27 @@ export function CaptureInbox({ project, notes, onChange }: { project: string; no
   async function fileReceipt(receipt: Receipt) {
     const { file } = receipt
     try {
-      if (!/\.(md|markdown|txt)$/i.test(file.name)) throw new Error("Choose a text or Markdown file; use the separate voice inbox for audio.")
+      if (/\.wav$/i.test(file.name)) {
+        if (file.size > 24 * 1024 * 1024) throw new Error("Choose a WAV under 24 MiB.")
+        const header = new TextDecoder().decode(await file.slice(0, 12).arrayBuffer())
+        if (!header.startsWith("RIFF") || !header.endsWith("WAVE")) throw new Error("The file does not look like a WAV recording.")
+        return { id: receipt.id, file, voice: true }
+      }
+      if (/\.png$/i.test(file.name) || file.type === "image/png") {
+        if (file.size > 1024 * 1024) throw new Error("Choose a PNG screenshot up to 1 MiB.")
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        if (bytes.length < 24) throw new Error("Choose a complete PNG screenshot.")
+        const view = new DataView(bytes.buffer)
+        if (view.getUint32(16) * view.getUint32(20) > 4_000_000) throw new Error("Choose a screenshot under four million pixels.")
+        const image = await createImageBitmap(file).catch(() => { throw new Error("Could not read this PNG screenshot.") })
+        image.close()
+        let binary = ""
+        for (let offset = 0; offset < bytes.length; offset += 16384) binary += String.fromCharCode(...bytes.subarray(offset, offset + 16384))
+        const value = await stageCaptureImage(project, file.name, btoa(binary))
+        if (value.item) add(value.item)
+        return { id: receipt.id, file, value }
+      }
+      if (!/\.(md|markdown|txt)$/i.test(file.name)) throw new Error("Choose text, Markdown, a PNG screenshot, or a WAV voice memo.")
       if (file.size > 160_000) throw new Error("Choose a smaller text file.")
       const text = new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer())
       if (text.length > 40_000 || text.includes("\0")) throw new Error("Choose a text file with at most 40,000 characters.")
@@ -63,8 +84,12 @@ export function CaptureInbox({ project, notes, onChange }: { project: string; no
     } finally { setBusy(false) }
   }
   return <section aria-label="Local capture queue">
-    <p className="quiet">Capture text, links, or selected text and Web Clipper files. Nothing is fetched or moved. Staged items stay out of Ask. Only approved web clips join Ask; notes and pasted links stay on the local capture shelf.</p>
-    <textarea aria-label="Paste a note or link" value={paste} rows={4} maxLength={40000} onChange={(event) => setPaste(event.target.value)} />
+    <p className="quiet">Capture notes, links, PNG screenshots and Web Clipper files; hand WAV recordings to the local voice review. Nothing is fetched or moved. Only approved web clips join Ask; other captures stay on the local shelf.</p>
+    <textarea aria-label="Paste a note, link, or screenshot" value={paste} rows={4} maxLength={40000} onChange={(event) => setPaste(event.target.value)}
+      onPaste={(event) => {
+        const pngs = Array.from(event.clipboardData.files).filter((file) => file.type === "image/png")
+        if (pngs.length) { event.preventDefault(); void receive(pngs) }
+      }} />
     <button type="button" className="primary" disabled={busy || !paste.trim()} onClick={async () => {
       setBusy(true); setMessage("")
       try {
@@ -77,16 +102,19 @@ export function CaptureInbox({ project, notes, onChange }: { project: string; no
     }}>Queue pasted capture</button>
     <div className="knowledge-card" onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
       event.preventDefault(); void receive(Array.from(event.dataTransfer.files))
-    }}><label>Choose or drop up to 20 text files <input aria-label="Select capture files" type="file" multiple disabled={busy}
-      accept=".txt,.md,.markdown" onChange={(event) => {
+    }}><label>Choose or drop up to 20 files <input aria-label="Select capture files" type="file" multiple disabled={busy}
+      accept=".txt,.md,.markdown,.png,.wav" onChange={(event) => {
         const files = Array.from(event.target.files ?? []); event.target.value = ""; void receive(files)
       }} /></label></div>
     {receipts.length > 0 && <ul aria-label="Batch receipts" aria-live="polite">{receipts.map((row) => <li key={row.id}>
-      {row.file.name}: {row.error ? `Failed — ${row.error}` : row.value?.status ?? "Queued"}{" "}
-      {row.value?.existing_clip && <a href={`#web-clip-${row.value.existing_clip.id}`} onClick={() => {
+      {row.file.name}: {row.error ? `Failed — ${row.error}` : row.voice ? "Ready for local voice review (not transcribed)" : row.value?.status ?? "Queued"}{" "}
+      {row.voice && <button type="button" className="ghost" onClick={() => onVoice(row.file)}>Review voice memo</button>}
+      {row.value?.existing_clip && <button type="button" className="ghost" onClick={() => {
         const target = document.getElementById(`web-clip-${row.value?.existing_clip?.id}`)
-        const details = target?.closest("details"); if (details) details.open = true
-      }}>Existing clip: {row.value.existing_clip.title}</a>}
+        const details = target?.closest("details")
+        if (details) details.open = true
+        target?.scrollIntoView({ block: "nearest" })
+      }}>Existing clip: {row.value.existing_clip.title}</button>}
       {row.value?.item && <button type="button" className="ghost" onClick={() => { setFilter("all"); choose(row.value!.item!) }}>Review queued item</button>}
       {row.error && <button type="button" className="ghost" disabled={busy} onClick={async () => {
         setBusy(true)
@@ -102,7 +130,9 @@ export function CaptureInbox({ project, notes, onChange }: { project: string; no
       <div aria-label="Capture list">{shown.map((item) => <button type="button" className="brain-diagram-card" key={item.id}
         aria-pressed={selected?.id === item.id} onClick={() => choose(item)}>{item.name} · {item.kind} · {item.state}</button>)}</div>
       {selected && <article className="knowledge-card"><strong>{selected.name}</strong>
-        <p className="quiet">Local copy for review · project {project}</p><pre className="knowledge-previous">{selected.content}</pre>
+        <p className="quiet">Local copy for review · project {project}</p>
+        {selected.kind === "image" ? <img className="capture-image" loading="lazy" src={`/api/captures/${encodeURIComponent(project)}/${encodeURIComponent(selected.id)}/image`}
+          alt={`Captured screenshot: ${selected.name}`} /> : <pre className="knowledge-previous">{selected.content}</pre>}
         {matches.length > 0 && <ul>{matches.map(({ note, shared }) => <li key={note.id}>{note.rel} · matching filename terms: {shared.join(", ")}</li>)}</ul>}
         {selected.state === "staged" && <>
           <label>Filing label <input maxLength={150} value={editing ? filing : selected.filing} placeholder="Optional; leave uncertain captures unfiled"

@@ -150,6 +150,11 @@ class CaptureChange(BaseModel):
     filing: str = Field(default="", max_length=150)
 
 
+class CaptureImage(BaseModel):
+    filename: str = Field(max_length=160)
+    data: str = Field(min_length=1, max_length=1_398_104)
+
+
 class LinkReview(BaseModel):
     state: Literal["kept", "dismissed"]
 
@@ -669,6 +674,29 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=409, detail=str(exc)) from None
         except (sqlite3.Error, OSError):
             raise HTTPException(status_code=409, detail="Could not update the capture") from None
+
+    @app.post("/api/capture-images/{project_id}")
+    def stage_capture_image(project_id: str, body: CaptureImage, request: Request):
+        _require_local_origin(request)
+        engine, project = inbox_project(project_id)
+        try:
+            return capture.stage_image(engine.root, project, body.data, body.filename)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        except (sqlite3.Error, OSError):
+            raise HTTPException(status_code=409, detail="Capture storage is unavailable") from None
+
+    @app.get("/api/captures/{project_id}/{identifier}/image")
+    def capture_image(project_id: str, identifier: str):
+        engine, project = inbox_project(project_id)
+        try:
+            return Response(capture.read_image(engine.root, project, identifier), media_type="image/png",
+                            headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+                                     "Cross-Origin-Resource-Policy": "same-origin"})
+        except (KeyError, ValueError):
+            raise HTTPException(status_code=404, detail="Capture image unavailable") from None
+        except (sqlite3.Error, OSError):
+            raise HTTPException(status_code=409, detail="Could not read the capture") from None
 
     @app.get("/api/meetings/{project_id}")
     def meeting_items(project_id: str):

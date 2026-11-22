@@ -278,8 +278,11 @@ def _review_findings(root: Path, brain: dict, draft: dict, content: str, expecte
             report("possible_conflict", warning, False)
     allowed = {record["rel"]: record for record in brain["files"] if record["id"] in actual_sources}
     web_quotes = _clip_quote_sources(root, _project(brain, draft["project_id"]), draft["sources"])
-    for issue in _quote_problems(root, safe, allowed, web_quotes):
+    cache: dict[str, str] = {}
+    for issue in _quote_problems(root, safe, allowed, web_quotes, cache):
         report("unverified_quote", issue)
+    for warning in _prose_conflicts(root, brain, draft["project_id"], safe, allowed, web_quotes, projected, cache):
+        report("possible_prose_conflict", warning, False)
     return findings
 
 
@@ -320,21 +323,66 @@ def _clip_quote_sources(root: Path, project: dict, sources: list[dict]) -> dict[
     return by_url
 
 
-def _quote_problems(root: Path, content: str, sources: dict[str, dict], web_quotes: dict[str, list[str]]):
-    for quote, rel in re.findall(r'^>\s*"([^"\n]+)"\s*[-–—]\s*`?(https?://[^\s`]+|[^`\n]+\.(?:md|markdown|txt|rst))`?[^\S\n]*$', content, re.M | re.I):
-        normalized = " ".join(quote.split())
-        if rel.lower().startswith(("https://", "http://")):
-            if not any(normalized in " ".join(text.split()) for text in web_quotes.get(rel, [])):
-                yield "Quote not found at the cited approved web clip URL"
-            continue
-        rec = sources.get(rel)
-        path = _resolve_under_root(root, rec) if rec and not rec.get("env_class") else None
+_QUOTATIONS = re.compile(r'^>[^\S\n]*"([^"\n]+)"[^\S\n]*[-–—][^\S\n]*`?(https?://[^\s`]+|[^`\n]+\.(?:md|markdown|txt|rst))`?[^\S\n]*$', re.M | re.I)
+_RULE = re.compile(r"([\w /-]{3,80}?)\s+(?:must( not)?|(?:is|are)( not)? required to)\s+([^.;!?]{5,140})[.!]?", re.I)
+_QUALIFIER = re.compile(r"\b(?:if|unless|except|until|when|sometimes|always|never|necessarily|formerly|may|should|not)\b", re.I)
+
+
+def _verified_quote(root, quote, rel, sources, web_quotes, cache):
+    normalized = " ".join(quote.split())
+    if rel.lower().startswith(("https://", "http://")):
+        return any(normalized in " ".join(text.split()) for text in web_quotes.get(rel, []))
+    rec = sources.get(rel)
+    if not rec or rec.get("env_class"):
+        return False
+    key = rec["id"]
+    if key not in cache:
+        path = _resolve_under_root(root, rec)
         try:
             text = path.read_text(encoding="utf-8", errors="replace") if path and not _blocked_file(path) and path.stat().st_size <= 350_000 else ""
         except OSError:
             text = ""
-        if not text or normalized not in " ".join(text.split()):
-            yield f"Quote not found in reviewed source {rel}: {quote[:60]}"
+        cache[key] = " ".join(text.split())
+    return bool(cache[key] and normalized in cache[key])
+
+
+def _quote_problems(root: Path, content: str, sources: dict[str, dict], web_quotes: dict[str, list[str]], cache=None):
+    cache = {} if cache is None else cache
+    for quote, rel in _QUOTATIONS.findall(content):
+        if not _verified_quote(root, quote, rel, sources, web_quotes, cache):
+            yield ("Quote not found at the cited approved web clip URL" if rel.lower().startswith(("https://", "http://")) else
+                   f"Quote not found in reviewed source {rel}: {quote[:60]}")
+
+
+def _quoted_rules(root, content, sources, web_quotes, cache):
+    for quote, rel in _QUOTATIONS.findall(content)[:40]:
+        clean = " ".join(quote.split())
+        match = _RULE.fullmatch(clean)
+        if match and not _QUALIFIER.search(f"{match[1]} {match[4]}") and _verified_quote(root, quote, rel, sources, web_quotes, cache):
+            yield (match[1].casefold(), match[4].casefold()), bool(match[2] or match[3]), rel, clean
+
+
+def _prose_conflicts(root, brain, project_id, content, allowed, web_quotes, others, cache):
+    proposed = list(_quoted_rules(root, content, allowed, web_quotes, cache))
+    if not proposed:
+        return
+    records = {record["id"]: record for record in brain["files"] if record["project_id"] == project_id}
+    project = _project(brain, project_id)
+    seen = set()
+    for other in [page for page in others if page["project_id"] == project_id][:40]:
+        fresh = [src for src in other["sources"] if src["id"] not in other["stale_sources"]]
+        sources = {src["rel"]: records[src["id"]] for src in fresh if src["id"] in records}
+        clips_by_url = _clip_quote_sources(root, project, fresh)
+        for key, negative, rel, quote in _quoted_rules(root, other["content"], sources, clips_by_url, cache):
+            for candidate, candidate_negative, candidate_rel, excerpt in proposed:
+                marker = (rel, quote, candidate_rel, excerpt)
+                if key != candidate or negative == candidate_negative or rel == candidate_rel or marker in seen:
+                    continue
+                seen.add(marker)
+                yield (f'Possible conflict in requirements: {other["title"]} cites “{quote}” ({rel}); this draft cites '
+                       f'“{excerpt}” ({candidate_rel}). Check scope and dates; neither passage is treated as authoritative.')
+                if len(seen) >= 12:
+                    return
 
 
 def pages(root: Path, brain: dict) -> list[dict]:
