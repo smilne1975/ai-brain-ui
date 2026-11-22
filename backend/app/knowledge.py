@@ -12,12 +12,17 @@ import re
 from datetime import datetime, timezone
 from difflib import unified_diff
 from pathlib import Path
+from tempfile import NamedTemporaryFile
+from threading import RLock
 from urllib.parse import quote as url_quote
+from uuid import uuid4
 
 from backend.app import clips
 from backend.app.redact import redact
 from backend.app.privacy import active as private_folders_active
 from backend.app.scanner import _blocked_file, _resolve_under_root
+
+_APPROVAL_LOCK = RLock()
 
 
 def _home(root: Path) -> Path:
@@ -46,9 +51,14 @@ def _save_manifest(root: Path, data: dict) -> None:
     home = _home(root)
     home.mkdir(parents=True, exist_ok=True)
     path = home / "manifest.json"
-    temp = home / "manifest.json.tmp"
-    temp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    temp.replace(path)
+    with NamedTemporaryFile("w", encoding="utf-8", dir=home, delete=False) as handle:
+        temp = Path(handle.name)
+        try:
+            json.dump(data, handle, indent=2, ensure_ascii=False)
+            handle.close()
+            temp.replace(path)
+        finally:
+            temp.unlink(missing_ok=True)
 
 
 def _fingerprint(root: Path, rec: dict) -> str | None:
@@ -183,6 +193,12 @@ def preview(root: Path, brain: dict, project_id: str, topic: str | None = None,
 def approve(root: Path, brain: dict, project_id: str, content: str, expected_revision: str | None,
              expected_sources: dict[str, str] | None = None, topic: str | None = None,
              source_ids: list[str] | None = None) -> dict:
+    with _APPROVAL_LOCK:
+        return _approve(root, brain, project_id, content, expected_revision, expected_sources, topic, source_ids)
+
+
+def _approve(root: Path, brain: dict, project_id: str, content: str, expected_revision: str | None,
+             expected_sources: dict[str, str] | None, topic: str | None, source_ids: list[str] | None) -> dict:
     if private_folders_active():
         raise ValueError("Knowledge saving is unavailable while private-folder exclusions are enabled")
     draft = preview(root, brain, project_id, topic, source_ids)
@@ -419,6 +435,106 @@ def source_impact(root: Path, brain: dict, approved_pages: list[dict], saved_ans
             impacts[source_id]["affected"].append({"kind": "question", "project_id": item["project_id"],
                 "id": question["id"], "label": question["question"], "passage": item["excerpt"], "move": None})
     return sorted(impacts.values(), key=lambda item: item["source_id"])
+
+
+def grouped_refresh(root: Path, brain: dict, project_id: str, source_id: str, page_ids: list[str],
+                    expected_token: str | None = None, expected_targets: dict[str, str] | None = None) -> dict:
+    """Prepare or commit a bounded set of immutable revisions through one manifest switch."""
+    if private_folders_active() or not 1 <= len(page_ids) <= 8 or len(set(page_ids)) != len(page_ids):
+        raise ValueError("Select one to eight distinct approved pages in this project")
+    _project(brain, project_id)
+    canon = root.resolve() / ".brain" / "knowledge"
+    if canon.resolve() != canon or (canon / "manifest.json").is_symlink():
+        raise ValueError("Grouped review cannot use linked knowledge storage")
+    with _APPROVAL_LOCK:
+        return _grouped_refresh(root, brain, project_id, source_id, sorted(page_ids), expected_token, expected_targets)
+
+
+def _grouped_refresh(root, brain, project_id, source_id, page_ids, expected_token, expected_targets):
+    manifest = _manifest(root)
+    current_pages = {page["page_id"]: page for page in pages(root, brain) if page["project_id"] == project_id}
+    impacts = source_impact(root, brain, list(current_pages.values()), [])
+    impact = next((item for item in impacts if item["source_id"] == source_id), None)
+    eligible = {entry["id"]: entry for entry in impact["affected"]} if impact else {}
+    targets = []
+    records = {record["id"]: record for record in brain["files"]}
+    for pid in page_ids:
+        page = current_pages.get(pid)
+        if not page or pid not in eligible or not page["content_sha256"]:
+            raise ValueError(f"{pid}: the reviewed target or changed source is no longer available")
+        if expected_token and (expected_targets or {}).get(pid) != page["content_sha256"]:
+            raise ValueError(f"{page['title']}: the approved page changed since preview; nothing was saved")
+        move = eligible[pid]["move"]
+        source_ids = [move["id"] if move and source["id"] == source_id else source["id"] for source in page["sources"]]
+        draft = preview(root, brain, project_id, page["topic"], source_ids)
+        # Do not silently drop sources or update other stale citations in the same transaction.
+        expected = {source["id"]: source["sha256"] for source in draft["sources"]}
+        original = {source["id"]: source["sha256"] for source in page["sources"]}
+        if set(source_ids) != set(expected) or any(original[key] != expected.get(key) for key in original if key != source_id):
+            raise ValueError(f"{page['title']}: another source changed or a selected source is unavailable")
+        for key in expected:
+            record = records.get(key)
+            if not record:
+                continue  # Approved clips have their own current fingerprint.
+            path = _resolve_under_root(root, record)
+            stat = path.stat() if path else None
+            if not stat or record.get("observed") != [str(stat.st_mtime_ns), stat.st_size]:
+                raise ValueError(f"{page['title']}: rescan before refreshing the group")
+        if draft["current_revision"] != page["revision"] or draft["previous_content"].replace("\r\n", "\n") != page["content"]:
+            raise ValueError(f"{page['title']}: current revision changed during preview")
+        safe = redact(draft["content"].strip())
+        report = review_report(root, brain, project_id, safe, page["revision"], expected, page["topic"], source_ids)
+        if report["diff_limited"] or any(finding["blocking"] for finding in report["findings"]):
+            raise ValueError(f"{page['title']}: requires individual review before this change can be applied")
+        targets.append({"id": pid, "title": page["title"], "revision": page["revision"], "content_sha256": page["content_sha256"],
+                        "content": safe, "sources": draft["sources"], "diff": report["diff"], "findings": report["findings"]})
+    reviewed = {"project": project_id, "source_id": source_id, "targets": targets}
+    token = hashlib.sha256(json.dumps(reviewed, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    result = {**reviewed, "token": token}
+    if expected_token is None:
+        return result
+    if token != expected_token:
+        raise ValueError("The source or one of the selected pages changed. Preview the entire group again; nothing was saved.")
+    home = _home(root.resolve())
+    stored = []
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    def stage(path: Path, content: str):
+        if path.resolve() != path:
+            raise ValueError("Grouped review cannot write into linked storage")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("x", encoding="utf-8") as handle:
+            stored.append(path)
+            handle.write(content)
+
+    try:
+        plan_id = uuid4().hex
+        for target in targets:
+            pid = target["id"]
+            revision = uuid4().hex[:16]
+            stage(home / _slug(pid) / f"{revision}.md", target["content"] + "\n")
+            previous = manifest[pid]
+            manifest[pid] = {**previous, "revision": revision, "revisions": [*previous["revisions"], revision],
+                             "sources": target["sources"], "updated_at": now, "review_plan": plan_id}
+        stage(home / "review-plans" / f"{plan_id}.json", json.dumps({**result, "approved_at": now}, indent=2, ensure_ascii=False))
+        # Recheck both the selected targets' previous bytes and all cited source hashes after staging.
+        fresh_manifest = _manifest(root)
+        for target in targets:
+            pid = target["id"]
+            former = home / _slug(pid) / f"{target['revision']}.md"
+            expected = {item["id"]: item["sha256"] for item in target["sources"]}
+            actual = {item["id"]: item["sha256"] for item in _sources(root, brain, project_id, list(expected))}
+            if (fresh_manifest.get(pid, {}).get("revision") != target["revision"] or
+                hashlib.sha256(former.read_bytes()).hexdigest() != target["content_sha256"] or actual != expected):
+                raise ValueError(f"{target['title']}: source or destination changed before commit; nothing was saved")
+        # Begin with the fresh manifest so other pages not included in the group don't regress.
+        fresh_manifest.update({pid: manifest[pid] for pid in page_ids})
+        _save_manifest(root, fresh_manifest)
+    except (OSError, ValueError):
+        for path in reversed(stored):
+            path.unlink(missing_ok=True)
+        raise
+    return {"saved": len(targets), "review_plan": plan_id}
 
 
 def lint(root: Path, brain: dict) -> list[dict]:

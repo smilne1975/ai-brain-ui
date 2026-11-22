@@ -13,6 +13,20 @@ export function fetchSourceReview(project: string) {
   return localReview<{ items: KnowledgeIndex["source_impact"]; limited: boolean }>(`/api/source-review/${encodeURIComponent(project)}`, "Could not check source changes.")
 }
 
+export type SourceGroup = { token: string; source_id: string; targets: { id: string; title: string; revision: string;
+  content_sha256: string; diff: string; findings: { detail: string }[] }[] }
+
+export function previewSourceGroup(project: string, source_id: string, page_ids: string[]) {
+  return localReview<SourceGroup>(`/api/source-review/${encodeURIComponent(project)}/preview`, "Could not preview the selected pages.", { source_id, page_ids })
+}
+
+export function saveSourceGroup(project: string, group: SourceGroup) {
+  return localReview<{ saved: number }>(`/api/source-review/${encodeURIComponent(project)}/approve`, "Could not save the selected pages.", {
+    source_id: group.source_id, token: group.token, page_ids: group.targets.map((target) => target.id),
+    expected_targets: Object.fromEntries(group.targets.map((target) => [target.id, target.content_sha256])),
+  })
+}
+
 export function getLinkReview(project: string, review?: { id: string; state: "kept" | "dismissed" }) {
   return localReview<LinkReview>(`/api/link-review/${encodeURIComponent(project)}${review ? `/${encodeURIComponent(review.id)}` : ""}`,
     "Could not review suggested links.", review && { state: review.state })

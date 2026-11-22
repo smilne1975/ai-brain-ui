@@ -109,7 +109,8 @@ export function KnowledgeView({ brain, focus }: { brain: Brain; focus: string | 
         </div>}
         <h2>Source changes</h2>
         {!brain.privacy && index && visible.map((project) => <details key={`${project.id}:${brain.scanned_at}`}>
-          <summary>{project.name}: source impact plan</summary><SourceReview project={project.id} index={index} load={load} />
+          <summary>{project.name}: source impact plan</summary><SourceReview project={project.id} index={index} load={load}
+            onSaved={() => { setDraft(null); void fetchKnowledge().then(setIndex).catch((err: Error) => setMessage(err.message)) }} />
         </details>)}
         {index?.source_impact.map((source) => {
           const affected = source.affected.filter((item) => !focus || item.project_id === focus)
