@@ -154,6 +154,16 @@ class LinkReview(BaseModel):
     state: Literal["kept", "dismissed"]
 
 
+class GroupRefresh(BaseModel):
+    source_id: str = Field(min_length=1, max_length=1000)
+    page_ids: list[str] = Field(min_length=1, max_length=8)
+
+
+class GroupApproval(GroupRefresh):
+    token: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_targets: dict[str, str] = Field(max_length=8)
+
+
 class DeliverableBody(BaseModel):
     title: str = Field(min_length=1, max_length=150)
     content: str = Field(min_length=1, max_length=80_000)
@@ -592,6 +602,29 @@ def create_app() -> FastAPI:
             return review_links.listing(engine.root, brain, knowledge._project(brain, project_id))
         except (ValueError, sqlite3.Error, OSError):
             raise HTTPException(status_code=409, detail="Could not read link suggestions for this project") from None
+
+    @app.post("/api/source-review/{project_id}/preview")
+    def preview_group(project_id: str, body: GroupRefresh, request: Request):
+        _require_local_origin(request)
+        engine, _ = inbox_project(project_id)
+        try:
+            return knowledge.grouped_refresh(engine.root, _require_brain(engine), project_id, body.source_id, body.page_ids)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
+        except OSError:
+            raise HTTPException(status_code=409, detail="Could not read the selected pages") from None
+
+    @app.post("/api/source-review/{project_id}/approve")
+    def approve_group(project_id: str, body: GroupApproval, request: Request):
+        _require_local_origin(request)
+        engine, _ = inbox_project(project_id)
+        try:
+            return knowledge.grouped_refresh(engine.root, _require_brain(engine), project_id, body.source_id, body.page_ids,
+                                             body.token, body.expected_targets)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
+        except OSError:
+            raise HTTPException(status_code=409, detail="Could not save the selected revisions; the approved group was not changed") from None
 
     @app.post("/api/link-review/{project_id}/{identifier}")
     def review_link(project_id: str, identifier: str, body: LinkReview, request: Request):

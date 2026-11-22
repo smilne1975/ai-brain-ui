@@ -127,3 +127,55 @@ def test_saved_answer_preserves_matched_passages_but_not_unverified_copy(tmp_pat
     [passage] = saved["passages"]
     assert passage["id"] == hit["id"] and passage["excerpt"] == hit["excerpt"] and passage["stale"]
     assert "ai-brain-passage" not in saved["content"]
+
+
+def test_group_refresh_is_read_only_until_approval_and_never_partially_commits(tmp_path, monkeypatch):
+    source = note(tmp_path, "work/input.md", "Transcription calibration improved interview precision.")
+    note(tmp_path, "work/unrelated.md", "An unrelated weekly plan.")
+    brain = scanner.build_brain(tmp_path)
+    for topic, ids in (("First", ["work:input.md"]), ("Second", ["work:input.md"]), ("Unrelated", ["work:unrelated.md"])):
+        page = knowledge.preview(tmp_path, brain, "work", topic, ids)
+        knowledge.approve(tmp_path, brain, "work", page["content"], page["current_revision"],
+                          {row["id"]: row["sha256"] for row in page["sources"]}, topic, ids)
+    source.write_text("Transcription calibration now needs another reviewer.", encoding="utf-8")
+    home = tmp_path / ".brain" / "knowledge"
+    before_manifest = (home / "manifest.json").read_bytes()
+    original_revisions = json.loads(before_manifest)
+    originals = {path: path.read_bytes() for path in home.rglob("*.md")}
+    endpoint = "/api/source-review/work"
+    params = {"source_id": "work:input.md", "page_ids": ["work~first", "work~second"]}
+    with app_for(tmp_path, monkeypatch) as client:
+        ready(client)
+        assert client.post(f"{endpoint}/preview", json={**params, "page_ids": ["work~unrelated"]}).status_code == 409
+        preview = client.post(f"{endpoint}/preview", json=params)
+        assert preview.status_code == 200, preview.text
+        plan = preview.json()
+        assert all("another reviewer" in row["diff"] for row in plan["targets"])
+        assert before_manifest == (home / "manifest.json").read_bytes() and list(home.rglob("*.md"))
+        assert not (home / "review-plans").exists()
+        body = {**params, "token": plan["token"], "expected_targets": {row["id"]: row["content_sha256"] for row in plan["targets"]}}
+        assert client.post(f"{endpoint}/approve", json=body, headers={"Origin": "https://example.com"}).status_code == 403
+        edited = next(path for path in originals if path.parent.name == "work-second")
+        edited.write_text("# Second\nExternally edited.", encoding="utf-8")
+        rejected = client.post(f"{endpoint}/approve", json=body)
+        assert rejected.status_code == 409 and "Second: the approved page changed" in rejected.json()["detail"]
+        assert before_manifest == (home / "manifest.json").read_bytes()
+        edited.write_bytes(originals[edited])
+        with monkeypatch.context() as simulate_failure:
+            def no_manifest_commit(*args):
+                raise OSError("simulated manifest write failure")
+
+            simulate_failure.setattr(knowledge, "_save_manifest", no_manifest_commit)
+            assert client.post(f"{endpoint}/approve", json=body).status_code == 409
+        assert before_manifest == (home / "manifest.json").read_bytes()
+        assert {path: path.read_bytes() for path in home.rglob("*.md")} == originals
+        assert not list((home / "review-plans").glob("*.json"))
+        approved = client.post(f"{endpoint}/approve", json=body)
+        assert approved.status_code == 200 and approved.json()["saved"] == 2, approved.text
+        refreshed = json.loads((home / "manifest.json").read_bytes())
+        assert refreshed["work~unrelated"] == original_revisions["work~unrelated"]
+        assert all(refreshed[row]["revision"] != original_revisions[row]["revision"] for row in params["page_ids"])
+        record = home / "review-plans" / f"{approved.json()['review_plan']}.json"
+        assert json.loads(record.read_text(encoding="utf-8"))["token"] == plan["token"]
+        assert client.get(endpoint).json()["items"] == []
+        assert source.read_text(encoding="utf-8") == "Transcription calibration now needs another reviewer."

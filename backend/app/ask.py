@@ -24,7 +24,7 @@ _VERSIONED = re.compile(r"^([a-z]+)\d+\.\d+[a-z0-9.]*$", re.I)
 def answer(brain: dict, question: str, project_id: str | None, provider: dict | None, pages: list[dict] | None = None,
            saved_answers: list[dict] | None = None, project_ids: list[str] | None = None,
            web_clips: list[dict] | None = None, external_notes: list[dict] | None = None, *,
-           origins: dict[str, str] | None = None, local_review: bool = False) -> dict:
+           origins: dict[str, str] | None = None, local_review: bool = False, keyword_only: bool = False) -> dict:
     question = redact(question.strip())[:2000]
     if not question:
         return {
@@ -38,7 +38,7 @@ def answer(brain: dict, question: str, project_id: str | None, provider: dict | 
              and not (local_review and (f.get("env_class") or f.get("name", "").casefold() == "brain_handoff.md"))]
     heuristic = _heuristic(brain, question, projects, files)
     q = _tokens(question)
-    similarity, hybrid_warning = ({}, None) if local_review else semantic.rank(question, files)
+    similarity, hybrid_warning = ({}, None) if local_review or keyword_only else semantic.rank(question, files)
     names = {p["id"]: p["name"] for p in projects}
     ranked_evidence = []
     pdf_gaps = []
