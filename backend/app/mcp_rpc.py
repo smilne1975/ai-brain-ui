@@ -12,6 +12,7 @@ from pathlib import Path
 
 from backend.app.mcp_tools import cap_text, latest_digest, load_index, log_call, run_tool, tool_specs
 from backend.app.mcp_tools import REPO
+from backend.app.privacy import active as private_folders_active
 
 PROTOCOL = "2024-11-05"
 RESOURCE = "brain://digest/latest"
@@ -25,6 +26,13 @@ def dispatch(message: dict, root: Path, engine=None) -> dict | None:
     params = message.get("params") if isinstance(message.get("params"), dict) else {}
     if mid is None:
         return None
+    if private_folders_active():
+        if method == "tools/list":
+            return {"jsonrpc": "2.0", "id": mid, "result": {"tools": []}}
+        if method == "resources/list":
+            return {"jsonrpc": "2.0", "id": mid, "result": {"resources": []}}
+        if method in {"tools/call", "resources/read"}:
+            return _error(mid, -32002, "Agent sharing is unavailable while private-folder exclusions are enabled")
     if method == "initialize":
         result = {
             "protocolVersion": PROTOCOL,

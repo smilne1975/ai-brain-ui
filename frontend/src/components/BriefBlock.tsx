@@ -86,6 +86,14 @@ export function BriefBlock({ brief, compact, onOpenFile, onSave }: Props) {
       <p className="brief-next">
         <em>Next</em> {brief.next_step}
       </p>
+      {!compact && brief.reviewed_memory && <>
+        {brief.reviewed_memory.unavailable && <p className="quiet">Reviewed memory is unavailable.</p>}
+        {!!brief.reviewed_memory.items.length && <details><summary>Reviewed project memory</summary>
+          <ul className="brief-list">{brief.reviewed_memory.items.map((row, index) => <li key={index}>
+            {row.kind}: {row.title} — {row.text}{row.references.length ? ` · ${row.references.join(", ")}` : ""}</li>)}</ul>
+        </details>}
+        {!!brief.reviewed_memory.stale_count && <p className="quiet">{brief.reviewed_memory.stale_count} reviewed memory item(s) withheld: evidence changed.</p>}
+      </>}
       {!compact && brief.todos.length > 0 && (
         <ul className="brief-todos">
           {brief.todos.slice(0, 4).map((item) => (

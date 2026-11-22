@@ -16,6 +16,7 @@ from pathlib import Path
 from backend.app.activity import _as_local, _cutoff, _iso, build_cards, build_timeline, window_days
 from backend.app.brief import build_briefs
 from backend.app.llm import complete, resolve_provider
+from backend.app.privacy import active as private_folders_active
 from backend.app.redact import redact
 
 log = logging.getLogger("brain.digest")
@@ -84,7 +85,7 @@ def export_digest(root: Path, brain: dict, period: str, chats: dict, now: dateti
 def write_scheduled(root: Path, brain: dict, now: datetime | None = None) -> Path | None:
     """Write today's or this week's digest once. No-op unless BRAIN_DIGEST is set."""
     period = digest_mode()
-    if period is None or not brain:
+    if private_folders_active() or period is None or not brain:
         return None
     now = _as_local(now)
     destination = _digest_path(root, period, now)

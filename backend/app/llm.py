@@ -25,7 +25,9 @@ _DEFAULTS = {
 
 
 def resolve_provider() -> dict | None:
-    if os.getenv("BRAIN_DISABLE_LLM") == "1":
+    from backend.app.privacy import active
+
+    if active() or os.getenv("BRAIN_DISABLE_LLM") == "1":
         return None
     forced = os.getenv("LLM_PROVIDER", "").strip().lower()
     available = {

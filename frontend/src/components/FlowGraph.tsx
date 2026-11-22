@@ -10,6 +10,7 @@ import {
   type NodeProps,
 } from "@xyflow/react"
 import * as dagre from "dagre"
+import { useMemo } from "react"
 import "@xyflow/react/dist/style.css"
 import type { GraphEdge, GraphNode } from "../types"
 import { matchesQuery } from "../format"
@@ -19,6 +20,7 @@ type CardData = {
   sub: string
   kind: string
   dim: boolean
+  spotlight?: boolean
   badge: string
   severity: string
   fileId: string | null
@@ -32,25 +34,33 @@ type Props = {
   nodes: GraphNode[]
   edges: GraphEdge[]
   query?: string
+  selectedId?: string | null
+  fitNodeId?: string
   onNodeClick?: (node: GraphNode) => void
 }
 
-export function FlowGraph({ nodes, edges, query = "", onNodeClick }: Props) {
-  const flow = layout(nodes, edges)
+export function FlowGraph({ nodes, edges, query = "", selectedId, fitNodeId, onNodeClick }: Props) {
+  const flow = useMemo(() => layout(nodes, edges), [nodes, edges])
+  const adjacent = connectedNodes(selectedId, edges)
+  const fitNodes = fitNodeId ? [...connectedNodes(fitNodeId, edges)].slice(0, 9).map((id) => ({ id })) : undefined
   const drawn = flow.nodes.map((node) => ({
     ...node,
     data: {
       ...node.data,
-      dim: !matchesQuery(query, `${node.data.label} ${node.data.sub} ${node.data.kind} ${node.data.badge}`),
+      spotlight: node.id === selectedId,
+      dim: selectedId ? !adjacent.has(node.id) : !matchesQuery(query, `${node.data.label} ${node.data.sub} ${node.data.kind} ${node.data.badge}`),
     },
   }))
   return (
     <ReactFlow
       nodes={drawn}
-      edges={flow.edges}
+      edges={selectedId ? flow.edges.map((edge) => {
+        const direct = edge.source === selectedId || edge.target === selectedId
+        return { ...edge, style: { ...edge.style, opacity: direct ? 1 : 0.25, strokeWidth: direct ? 2 : 1.25 } }
+      }) : flow.edges}
       nodeTypes={nodeTypes}
       fitView
-      fitViewOptions={{ padding: 0.18 }}
+      fitViewOptions={{ padding: 0.18, nodes: fitNodes, maxZoom: fitNodeId ? 1.1 : undefined }}
       minZoom={0.2}
       maxZoom={1.7}
       nodesConnectable={false}
@@ -73,6 +83,18 @@ export function FlowGraph({ nodes, edges, query = "", onNodeClick }: Props) {
   )
 }
 
+function connectedNodes(selected: string | null | undefined, edges: GraphEdge[]) {
+  const ids = new Set<string>()
+  if (selected) {
+    ids.add(selected)
+    for (const edge of edges) {
+      if (edge.source === selected) ids.add(edge.target)
+      if (edge.target === selected) ids.add(edge.source)
+    }
+  }
+  return ids
+}
+
 const nodeTypes = {
   card: CardNode,
   diamond: DiamondNode,
@@ -80,7 +102,7 @@ const nodeTypes = {
 
 function CardNode({ data }: NodeProps<Node<CardData, "card">>) {
   return (
-    <div className={`rf-card kind-${data.kind}${data.severity ? ` sev-${data.severity}` : ""}${data.dim ? " dim" : ""}`}>
+    <div className={`rf-card kind-${data.kind}${data.severity ? ` sev-${data.severity}` : ""}${data.dim ? " dim" : ""}${data.spotlight ? " spotlight" : ""}`}>
       <Handle type="target" position={Position.Top} />
       <div className="rf-kicker">
         {data.kind}
@@ -95,7 +117,7 @@ function CardNode({ data }: NodeProps<Node<CardData, "card">>) {
 
 function DiamondNode({ data }: NodeProps<Node<CardData, "diamond">>) {
   return (
-    <div className={`rf-diamond${data.dim ? " dim" : ""}`}>
+    <div className={`rf-diamond${data.dim ? " dim" : ""}${data.spotlight ? " spotlight" : ""}`}>
       <Handle type="target" position={Position.Top} />
       <div className="rf-diamond-shape">
         <span>{data.label}</span>

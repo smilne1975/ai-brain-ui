@@ -11,11 +11,15 @@ import ast
 import hashlib
 import os
 import re
+import stat
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
 from backend.app.catalog import CATEGORY_ORDER, SKILLS, SERVICES, ServiceDef
+from backend.app.evidence import text_key
+from backend.app.pdf_index import PdfIndex, enabled as pdf_enabled
+from backend.app.privacy import Policy, policy as privacy_policy
 from backend.app.redact import redact
 
 IGNORE_DIRS = {
@@ -87,6 +91,7 @@ MAX_FILES = 2000
 PER_PROJECT = 250
 EXCERPT = 900
 ProgressFn = Callable[[dict], None]
+CoverageFn = Callable[[Path, str, str], None]
 
 _KEY_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
 _TODO_RE = re.compile(
@@ -101,12 +106,15 @@ def ignored_dir_name(name: str) -> bool:
 
 def build_brain(root: Path, progress: ProgressFn | None = None) -> dict:
     root = root.expanduser().resolve()
+    privacy = privacy_policy(root)
     _emit(progress, message="Finding folders", projects=0, files=0, current=str(root))
-    projects_spec = _detect_projects(root)
+    projects_spec = [] if privacy.invalid else _detect_projects(root, privacy)
     projects: list[dict] = []
     files: list[dict] = []
     truncated = False
     used_ids: set[str] = set()
+    pdf_index = PdfIndex() if pdf_enabled() else None
+    coverage: dict = {"issues": [], "counts": {"skipped": 0, "unreadable": 0, "partial": 0}}
     for index, (name, path, shallow) in enumerate(projects_spec):
         remaining = MAX_FILES - len(files)
         if remaining <= 0:
@@ -134,7 +142,13 @@ def build_brain(root: Path, progress: ProgressFn | None = None) -> dict:
                 current=str(file_path),
             )
 
-        proj_files, hit_cap = _scan_project(shell["id"], path, shallow, budget, _on_file)
+        def _coverage(file_path: Path, status: str, reason: str) -> None:
+            coverage["counts"][status] += 1
+            if len(coverage["issues"]) < 200:
+                coverage["issues"].append({"project_id": shell["id"], "rel": file_path.relative_to(path).as_posix(),
+                                           "status": status, "reason": reason})
+
+        proj_files, hit_cap = _scan_project(shell["id"], path, shallow, budget, _on_file, pdf_index, root, privacy, _coverage)
         for rec in proj_files:
             rec["project_rel"] = shell["rel"]
         files.extend(proj_files)
@@ -144,7 +158,10 @@ def build_brain(root: Path, progress: ProgressFn | None = None) -> dict:
             if len(proj_files) >= remaining:
                 break
 
+    from backend.app import flow_hints
+
     _resolve_imports(files)
+    flow_hints.resolve(files)
     skills = _aggregate_skills(files)
     connections = _aggregate_services(files)
     for project in projects:
@@ -153,8 +170,9 @@ def build_brain(root: Path, progress: ProgressFn | None = None) -> dict:
     from backend.app.microstation import attach_microstation
     from backend.app.microstation_config import attach_config, config_search_rows
 
-    attach_microstation(root, projects, files)
-    attach_config(root, projects, files)
+    if privacy.token is None:
+        attach_microstation(root, projects, files)
+        attach_config(root, projects, files)
     config_index = config_search_rows(projects)
     architecture = {
         "corpus": _corpus_graph(projects, files, connections),
@@ -174,6 +192,8 @@ def build_brain(root: Path, progress: ProgressFn | None = None) -> dict:
         "root_name": root.name,
         "scanned_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "truncated": truncated,
+        "private_policy": privacy.token,
+        "coverage": coverage,
         "projects": projects,
         "files": files,
         "skills": skills,
@@ -190,22 +210,33 @@ def build_brain(root: Path, progress: ProgressFn | None = None) -> dict:
 def signature(root: Path, progress: ProgressFn | None = None) -> str:
     """Cheap change token: relative path, size, mtime. Not file contents."""
     root = root.expanduser().resolve()
-    h = hashlib.sha256(b"brain-v6")
+    h = hashlib.sha256(b"brain-v9")
+    privacy = privacy_policy(root)
+    if privacy.token:
+        h.update(f"privacy-v1:{privacy.token}".encode())
+    if privacy.invalid:
+        return h.hexdigest()
+    if pdf_enabled():
+        h.update(b"pdf-v1")
     if not root.exists():
         h.update(b"missing")
         return h.hexdigest()
     seen = 0
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         _prune_dirs(dirnames, dirpath)
+        dirnames[:] = [name for name in dirnames if not _private_path(root, Path(dirpath) / name, privacy)]
         for name in sorted(filenames):
             path = Path(dirpath) / name
-            if not _interesting(path) or _blocked_file(path):
+            if _private_path(root, path, privacy):
+                continue
+            rel = path.relative_to(root).as_posix()
+            if not _interesting(path):
+                h.update(f"skipped:{rel}\0".encode())
                 continue
             try:
                 st = path.lstat()
             except OSError:
                 continue
-            rel = path.relative_to(root).as_posix()
             h.update(rel.encode())
             h.update(str(st.st_size).encode())
             h.update(str(int(st.st_mtime_ns)).encode())
@@ -217,6 +248,13 @@ def signature(root: Path, progress: ProgressFn | None = None) -> str:
 
 def file_excerpt(root: Path, file_rec: dict) -> dict:
     """Re-read one indexed file for the drawer. Env files stay key-names-only."""
+    if _resolve_under_root(root, file_rec) is None:
+        return {"excerpt": "File is not available in this scan."}
+    if file_rec.get("kind") == "pdf":
+        excerpts = [f"Page {page['page']}{' (OCR)' if page['method'] == 'ocr' else ''}\n{page['text']}"
+                    for page in file_rec["pdf_pages"]]
+        return {"id": file_rec["id"], "rel": file_rec["rel"], "kind": "pdf",
+                "excerpt": "\n\n".join(file_rec["pdf_warnings"] + excerpts)[:4000]}
     if file_rec.get("env_class"):
         keys = ", ".join(file_rec.get("env_keys") or []) or "none"
         return {
@@ -244,10 +282,13 @@ def _resolve_under_root(root: Path, file_rec: dict) -> Path | None:
     root = root.resolve()
     project_rel = file_rec.get("project_rel") or ""
     base = root if not project_rel or project_rel == "." else (root / project_rel)
-    candidate = (base / file_rec["rel"]).resolve()
+    original = base / file_rec["rel"]
     try:
-        candidate.relative_to(root)
-    except ValueError:
+        privacy = privacy_policy(root)
+        candidate = original.resolve()
+        if _private_path(root, original, privacy) or _private_path(root, candidate, privacy):
+            return None
+    except (ValueError, OSError, RuntimeError):
         return None
     return candidate
 
@@ -257,12 +298,17 @@ def _emit(progress: ProgressFn | None, **fields: object) -> None:
         progress(fields)
 
 
-def _detect_projects(root: Path) -> list[tuple[str, Path, bool]]:
+def _private_path(root: Path, path: Path, privacy: Policy) -> bool:
+    relative = path.relative_to(root)
+    return privacy.excludes(relative) or bool(privacy.token and path.name.casefold() == "brain_handoff.md")
+
+
+def _detect_projects(root: Path, privacy: Policy = Policy()) -> list[tuple[str, Path, bool]]:
     subdirs = [
         p for p in sorted(root.iterdir(), key=lambda p: p.name.lower())
-        if p.is_dir() and not p.name.startswith(".") and not ignored_dir_name(p.name) and not _is_reparse(p)
+        if not _private_path(root, p, privacy) and p.is_dir() and not p.name.startswith(".") and not ignored_dir_name(p.name) and not _is_reparse(p)
     ]
-    loose = [p for p in root.iterdir() if p.is_file() and _interesting(p)]
+    loose = [p for p in root.iterdir() if not _private_path(root, p, privacy) and p.is_file() and _interesting(p)]
     if subdirs:
         specs = [(p.name, p, False) for p in subdirs]
         if loose:
@@ -295,34 +341,58 @@ def _scan_project(
     shallow: bool,
     budget: int,
     on_file: Callable[[Path, int], None] | None = None,
+    pdf_index: PdfIndex | None = None,
+    root: Path | None = None,
+    privacy: Policy = Policy(),
+    coverage: CoverageFn | None = None,
 ) -> tuple[list[dict], bool]:
     found: list[dict] = []
     hit_cap = False
     seen = 0
-    for file_path in _iter_files(path, shallow):
+    for file_path in _iter_files(path, shallow, root or path, privacy, coverage):
         seen += 1
         if on_file:
             on_file(file_path, seen)
         if len(found) >= budget:
             hit_cap = True
             break
-        rec = _scan_file(pid, path, file_path)
+        rec = _scan_pdf(pid, path, file_path, pdf_index) if pdf_index and file_path.suffix.lower() == ".pdf" else _scan_file(pid, path, file_path)
         if rec:
             found.append(rec)
+            if coverage and rec.get("coverage_issue"):
+                coverage(file_path, *rec["coverage_issue"])
+        elif coverage:
+            coverage(file_path, "unreadable", "File could not be read")
     return found, hit_cap
 
 
-def _iter_files(path: Path, shallow: bool):
+def _iter_files(path: Path, shallow: bool, root: Path | None = None, privacy: Policy = Policy(), coverage: CoverageFn | None = None):
+    root = root or path
+
+    def include(child: Path) -> bool:
+        if _private_path(root, child, privacy):
+            return False
+        if not _interesting(child):
+            if coverage:
+                coverage(child, "skipped", "Format or filename is excluded by scan settings")
+            return False
+        if reason := _file_block_reason(child):
+            if coverage:
+                coverage(child, "skipped", reason)
+            return False
+        return True
+
     if shallow:
         for child in sorted(path.iterdir(), key=lambda p: p.name.lower()):
-            if child.is_file() and _interesting(child) and not _blocked_file(child):
+            if not _private_path(root, child, privacy) and not child.is_dir() and include(child):
                 yield child
         return
     for dirpath, dirnames, filenames in os.walk(path, followlinks=False):
         _prune_dirs(dirnames, dirpath)
+        dirnames[:] = [name for name in dirnames if not _private_path(root, Path(dirpath) / name, privacy)]
         for name in sorted(filenames):
             file_path = Path(dirpath) / name
-            if _interesting(file_path) and not _blocked_file(file_path):
+            if include(file_path):
                 yield file_path
 
 
@@ -357,16 +427,22 @@ def _is_reparse(path: Path) -> bool:
 
 def _blocked_file(path: Path) -> bool:
     """Cloud-only placeholders and reparse files block on read. Leave them out."""
+    return bool(_file_block_reason(path))
+
+
+def _file_block_reason(path: Path) -> str | None:
     try:
         st = path.lstat()
     except OSError:
-        return True
+        return "File metadata could not be read"
     attrs = int(getattr(st, "st_file_attributes", 0) or 0)
-    if attrs & _ATTR_SKIP_FILE:
-        return True
-    if st.st_size > HUGE_FILE_BYTES:
-        return True
-    return False
+    if attrs & (_ATTR_OFFLINE | _ATTR_RECALL_ON_OPEN | _ATTR_RECALL_ON_DATA):
+        return "File is offline or marked to download on access"
+    if attrs & _ATTR_SKIP_FILE or not stat.S_ISREG(st.st_mode):
+        return "Linked or special file is not read"
+    if st.st_size > HUGE_FILE_BYTES and not (pdf_enabled() and path.suffix.lower() == ".pdf"):
+        return "File exceeds the 8 MB scan limit"
+    return None
 
 
 def blocked_by_attrs(attrs: int, size: int) -> bool:
@@ -380,11 +456,31 @@ def _interesting(path: Path) -> bool:
     lower = path.name.lower()
     if lower in SKIP_NAMES or lower.startswith("~$") or lower.endswith(".tmp"):
         return False
-    if path.suffix.lower() in SKIP_EXT:
+    ext = path.suffix.lower()
+    if ext in SKIP_EXT and not (ext == ".pdf" and pdf_enabled()):
         return False
     if path.name.startswith(".") and _env_class(path.name) is None and path.name not in {".gitignore", ".editorconfig"}:
         return False
     return True
+
+
+def _scan_pdf(project_id: str, project_root: Path, path: Path, pdf_index: PdfIndex) -> dict | None:
+    if _blocked_file(path):
+        return None
+    try:
+        oversized = path.stat().st_size > HUGE_FILE_BYTES
+    except OSError:
+        return None
+    pages, warnings, total = ([], ["PDF exceeds the 8 MB scan limit"], 0) if oversized else pdf_index.read(path)
+    summary = f"PDF: indexed {len(pages)} of {total} pages." if total else "PDF: no pages indexed."
+    if warnings:
+        summary += f" {warnings[0]}."
+    rec = _base_record(project_id, path.relative_to(project_root).as_posix(), path.name,
+                       "pdf", 0, summary, "", [], None, [], False, [])
+    rec.update(pdf_pages=pages, pdf_warnings=warnings)
+    if warnings:
+        rec["coverage_issue"] = ["partial" if pages else "unreadable", warnings[0]]
+    return _attach(path, rec)
 
 
 def _env_class(name: str) -> str | None:
@@ -404,11 +500,15 @@ def _scan_file(project_id: str, project_root: Path, path: Path) -> dict | None:
     kind = _kind(path, env_class)
     try:
         with path.open("rb") as handle:
-            raw = handle.read(MAX_FILE_BYTES)
+            raw = handle.read(MAX_FILE_BYTES + 1)
     except OSError:
         return None
+    partial = len(raw) > MAX_FILE_BYTES
+    raw = raw[:MAX_FILE_BYTES]
     if b"\x00" in raw[:1024]:
-        return _attach(path, _base_record(project_id, rel, path.name, "binary", 0, "Binary file, skipped.", "", [], None, [], False, []))
+        rec = _base_record(project_id, rel, path.name, "binary", 0, "Binary file, skipped.", "", [], None, [], False, [])
+        rec["coverage_issue"] = ["skipped", "Binary data has no searchable text"]
+        return _attach(path, rec)
     text = raw.decode("utf-8", errors="replace")
     lines = text.count("\n") + (1 if text else 0)
     if env_class:
@@ -425,6 +525,8 @@ def _scan_file(project_id: str, project_root: Path, path: Path) -> dict | None:
             project_id, rel, path.name, "env", lines, summary, "", skills, env_class, keys, False, []
         )
         rec["service_how"] = _service_how_for_env(keys, env_class)
+        if partial:
+            rec["coverage_issue"] = ["partial", "Key names were checked only in the first 350 KB"]
         return _attach(path, rec)
     safe = redact(text)
     todos = _todos(safe)
@@ -447,9 +549,15 @@ def _scan_file(project_id: str, project_root: Path, path: Path) -> dict | None:
     rec = _base_record(project_id, rel, path.name, kind, lines, summary, excerpt, skills, None, [], entry, todos)
     rec["symbols"] = symbols[:24]
     rec["import_names"] = local_imports
+    if kind == "python":
+        rec["flow_hints"] = parsed.get("flow_hints", [])
     rec["intro"] = (intro or doc or "")[:400]
     rec["title"] = _title(path.name, kind, safe)
     rec["service_how"] = _service_how_for_text(rel, safe)
+    if not partial and kind == "markdown" and safe == text and (fingerprint := text_key(text)):
+        rec["_evidence_hash"] = fingerprint
+    if partial:
+        rec["coverage_issue"] = ["partial", "Text was checked only in the first 350 KB"]
     return _attach(path, rec, local_imports)
 
 
@@ -484,7 +592,9 @@ def _base_record(
 def _attach(path: Path, rec: dict, imports: list[str] | None = None) -> dict:
     """Record mtime and top-level imports. Never stores raw env values."""
     try:
-        rec["mtime"] = int(path.lstat().st_mtime)
+        stat = path.lstat()
+        rec["mtime"] = int(stat.st_mtime)
+        rec["observed"] = [str(stat.st_mtime_ns), stat.st_size]
     except OSError:
         rec["mtime"] = None
     found: list[str] = []
@@ -540,6 +650,8 @@ def _todos(text: str) -> list[dict]:
 
 
 def _analyze_python(text: str) -> dict:
+    from backend.app import flow_hints
+
     try:
         tree = ast.parse(text)
     except SyntaxError:
@@ -567,7 +679,7 @@ def _analyze_python(text: str) -> dict:
         elif isinstance(node, (ast.Import, ast.ImportFrom)):
             imports.extend(_import_names(node))
     entry = has_main or "argparse" in text
-    return {"symbols": symbols, "imports": imports, "doc": doc.strip(), "entry": entry}
+    return {"symbols": symbols, "imports": imports, "doc": doc.strip(), "entry": entry, "flow_hints": flow_hints.detect(tree)}
 
 
 def _is_decision(node: ast.AST) -> bool:

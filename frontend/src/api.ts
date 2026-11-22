@@ -1,4 +1,5 @@
-import type { AskResponse, Brain, BrainStatus, BriefBoard, CardBoard, ChatIndex, ConfigBoard, Digest, KnowledgeIndex, KnowledgePreview, McpDoctor, McpUsage, Timeline } from "./types"
+import type { AskResponse, Brain, BrainStatus, BriefBoard, CardBoard, ChatIndex, ClipDraft, ConfigBoard, DeliverableDraft, DeliverableRecord, Digest, KnowledgeIndex, KnowledgePreview, McpDoctor, McpUsage, MeetingItem, ObsidianPreview, SavedMeetingItem, Timeline, VoiceDraft, VoiceItem, VoiceNote, WebClip, WorkflowBoard } from "./types"
+import type { ScanReplay, TraceQuestion, TraceRecord } from "./types"
 
 export async function fetchStatus(): Promise<BrainStatus> {
   const res = await fetch("/api/health")
@@ -128,6 +129,148 @@ export async function approveKnowledge(id: string, content: string, expected_rev
     headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, expected_revision, expected_sources, topic, source_ids }) })
   if (!res.ok) throw new Error(await readDetail(res, "Could not save knowledge page."))
   return res.json()
+}
+
+export async function fetchScanReplay(project: string | null, frame: number | null, signal?: AbortSignal): Promise<ScanReplay> {
+  const search = new URLSearchParams()
+  if (project) search.set("project_id", project)
+  if (frame !== null) search.set("frame", String(frame))
+  const res = await fetch(`/api/scan-replay?${search}`, { signal })
+  if (!res.ok) throw new Error(await readDetail(res, "Scan history is not available."))
+  return res.json()
+}
+
+export async function fetchTraceQuestions(signal: AbortSignal): Promise<{ items: TraceQuestion[] }> {
+  const res = await fetch("/api/living-questions", { signal })
+  if (!res.ok) throw new Error(await readDetail(res, "Followed questions could not be loaded."))
+  return res.json()
+}
+
+export async function fetchTraceRecords(project: string, signal: AbortSignal): Promise<{ items: TraceRecord[]; history: TraceRecord[] }> {
+  const res = await fetch(`/api/project-records/${encodeURIComponent(project)}`, { signal })
+  if (!res.ok) throw new Error(await readDetail(res, "Project decisions could not be loaded."))
+  return res.json()
+}
+
+export async function reviewKnowledge(draft: KnowledgePreview, content: string) {
+  const res = await fetch(`/api/knowledge/${encodeURIComponent(draft.project_id)}/review`, { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, expected_revision: draft.current_revision,
+      expected_sources: Object.fromEntries(draft.sources.map((item) => [item.id, item.sha256])), topic: draft.topic, source_ids: draft.source_ids }) })
+  if (!res.ok) throw new Error(await readDetail(res, "Could not check the draft."))
+  return res.json() as Promise<{ findings: { kind: string; detail: string; blocking: boolean }[]; diff: string; diff_limited: boolean }>
+}
+
+export async function fetchMeetings(project: string) {
+  const res = await fetch(`/api/meetings/${encodeURIComponent(project)}`)
+  if (!res.ok) throw new Error(await readDetail(res, "Could not load approved meeting items."))
+  return res.json() as Promise<{ items: SavedMeetingItem[] }>
+}
+
+export async function previewMeeting(project: string, notes: string) {
+  const res = await fetch(`/api/meetings/${encodeURIComponent(project)}/preview`, { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ notes }) })
+  if (!res.ok) throw new Error(await readDetail(res, "Could not review meeting notes."))
+  return res.json() as Promise<{ source_id: string; items: MeetingItem[] }>
+}
+
+export async function approveMeeting(project: string, notes: string, sourceName: string, sourceId: string, items: MeetingItem[]) {
+  const res = await fetch(`/api/meetings/${encodeURIComponent(project)}/approve`, { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ notes, source_name: sourceName, source_id: sourceId,
+      items: items.map(({ line, text, owner, due }) => ({ line, text, owner, due })) }) })
+  if (!res.ok) throw new Error(await readDetail(res, "Could not save meeting items."))
+  return res.json() as Promise<{ added: number; already_saved: number }>
+}
+
+export async function fetchClips(project: string) {
+  const res = await fetch(`/api/web-clips/${encodeURIComponent(project)}`)
+  if (!res.ok) throw new Error(await readDetail(res, "Could not load web clips."))
+  return res.json() as Promise<{ items: WebClip[] }>
+}
+
+export async function previewClip(project: string, filename: string, markdown: string) {
+  const res = await fetch(`/api/web-clips/${encodeURIComponent(project)}/preview`, { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename, markdown }) })
+  if (!res.ok) throw new Error(await readDetail(res, "Could not preview the clip."))
+  return res.json() as Promise<ClipDraft>
+}
+
+export async function approveClip(project: string, filename: string, markdown: string, expected_id: string) {
+  const res = await fetch(`/api/web-clips/${encodeURIComponent(project)}/approve`, { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename, markdown, expected_id }) })
+  if (!res.ok) throw new Error(await readDetail(res, "Could not approve the clip."))
+  return res.json() as Promise<{ clip: WebClip; created: boolean }>
+}
+
+export async function setClipActive(project: string, clip: string, active: boolean) {
+  const res = await fetch(`/api/web-clips/${encodeURIComponent(project)}/${encodeURIComponent(clip)}/state`, { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active }) })
+  if (!res.ok) throw new Error(await readDetail(res, "Could not update the clip."))
+  return res.json() as Promise<WebClip>
+}
+
+export async function fetchDeliverables(project: string) {
+  const res = await fetch(`/api/deliverables/${encodeURIComponent(project)}`)
+  if (!res.ok) throw new Error(await readDetail(res, "Could not load tracked deliverables."))
+  return res.json() as Promise<{ items: DeliverableRecord[] }>
+}
+
+export async function writeDeliverable<T = DeliverableDraft>(project: string, action: string, body: object) {
+  const res = await fetch(`/api/deliverables/${encodeURIComponent(project)}/${action}`, { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+  if (!res.ok) throw new Error(await readDetail(res, "Could not process the deliverable."))
+  return res.json() as Promise<T>
+}
+
+export async function fetchWorkflowEvents(project: string) {
+  const res = await fetch(`/api/workflow-events/${encodeURIComponent(project)}`)
+  if (!res.ok) throw new Error(await readDetail(res, "Could not load workflow events."))
+  return res.json() as Promise<WorkflowBoard>
+}
+
+export async function postWorkflowEvent<T>(project: string, action: string, body?: object) {
+  const res = await fetch(`/api/workflow-events/${encodeURIComponent(project)}/${action}`, { method: "POST",
+    headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined })
+  if (!res.ok) throw new Error(await readDetail(res, "Could not process the workflow event."))
+  return res.json() as Promise<T>
+}
+
+export async function fetchVoiceNotes(project: string) {
+  const res = await fetch(`/api/voice-notes/${encodeURIComponent(project)}`)
+  if (!res.ok) throw new Error(await readDetail(res, "Could not load voice notes."))
+  return res.json() as Promise<{ available: boolean; items: VoiceNote[] }>
+}
+
+export async function previewVoiceNote(project: string, file: File) {
+  const query = new URLSearchParams({ filename: file.name.slice(0, 160) })
+  const res = await fetch(`/api/voice-notes/${encodeURIComponent(project)}/preview?${query}`, { method: "POST",
+    headers: { "Content-Type": "audio/wav" }, body: file })
+  if (!res.ok) throw new Error(await readDetail(res, "Could not transcribe the audio locally."))
+  return res.json() as Promise<VoiceDraft>
+}
+
+export async function approveVoiceNote(project: string, draft: string, items: VoiceItem[]) {
+  const res = await fetch(`/api/voice-notes/${encodeURIComponent(project)}/${encodeURIComponent(draft)}/approve`, { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: items.map(({ segment, kind, text }) => ({ segment, kind, text })) }) })
+  if (!res.ok) throw new Error(await readDetail(res, "Could not save approved voice notes."))
+  return res.json() as Promise<VoiceNote>
+}
+
+export async function discardVoiceNote(project: string, draft: string) {
+  const res = await fetch(`/api/voice-notes/${encodeURIComponent(project)}/${encodeURIComponent(draft)}/discard`, { method: "POST" })
+  if (!res.ok) throw new Error(await readDetail(res, "Could not discard the voice draft."))
+}
+
+export async function previewObsidian(project: string) {
+  const res = await fetch(`/api/obsidian/${encodeURIComponent(project)}/preview`)
+  if (!res.ok) throw new Error(await readDetail(res, "Could not preview the Obsidian package."))
+  return res.json() as Promise<ObsidianPreview>
+}
+
+export async function downloadObsidian(project: string, preview: ObsidianPreview) {
+  const res = await fetch(`/api/obsidian/${encodeURIComponent(project)}/download`, { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ export_id: preview.export_id, token: preview.token }) })
+  if (!res.ok) throw new Error(await readDetail(res, "Could not download the Obsidian package."))
+  return res.blob()
 }
 
 export async function saveAnswer(project_id: string, title: string, answer: string, source_ids: string[]) {

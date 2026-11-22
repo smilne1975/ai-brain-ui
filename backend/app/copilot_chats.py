@@ -61,10 +61,13 @@ _DB_KEYS = (
 
 def load_chats(root: Path, brain: dict) -> dict:
     """Return local Copilot sessions matched to projects in ``brain``."""
-    if not _enabled():
+    from backend.app.privacy import active
+
+    private = active()
+    if private or not _enabled():
         return {
             "enabled": False,
-            "source": "disabled",
+            "source": "private-folders" if private else "disabled",
             "roots": [],
             "sessions": [],
             "by_project": {},
@@ -142,6 +145,8 @@ def merge_chats(timeline: dict, index: dict) -> dict:
             "summary": session.get("summary") or "",
             "files": session.get("files") or [],
         }
+        if session.get("agent"):
+            event["agent"] = session["agent"]
         slot = slot_index.get((date, project_id))
         if slot is None:
             day = day_index.get(date)

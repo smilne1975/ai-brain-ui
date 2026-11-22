@@ -18,7 +18,7 @@ from backend.app.activity import (
     _as_local,
     _entry,
     _file_when,
-    _git_commits,
+    _visible_commits,
     _indexed_text,
     _iso,
     _project_dir,
@@ -85,7 +85,7 @@ def _one(root: Path, brain: dict, project: dict, chats: dict, now: datetime) -> 
     entry = _entry(root, project, files)
     run_command = (entry or {}).get("how") or ""
     recent = _recent_files(root, project, files, now)
-    commits = _git_commits(_project_dir(root, project), limit=3)
+    commits = _visible_commits(root, project, limit=3)
     key_files = _key_files(files, sessions, recent, entry)
     last_doing = _last_doing(sessions, recent, commits, project)
     next_step = _next_step(todos, files, sessions, run_command, project)
@@ -150,7 +150,7 @@ def _decisions(root: Path, project: dict, files: list[dict]) -> list[str]:
             cleaned = redact(stripped[2:].strip())
             if cleaned and cleaned not in found:
                 found.append(cleaned[:180])
-    for commit in _git_commits(_project_dir(root, project), limit=8):
+    for commit in _visible_commits(root, project, limit=8):
         subject = redact(str(commit.get("subject") or "")).strip()
         if subject and _DECISION_RE.search(subject) and subject not in found:
             found.append(subject[:180])
