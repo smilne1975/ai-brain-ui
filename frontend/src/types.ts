@@ -380,6 +380,7 @@ export type Brain = {
   provider: ProviderInfo
   signature?: string
   privacy?: "active" | "invalid"
+  legacy_cad?: boolean
   coverage?: { counts: { skipped: number; unreadable: number; partial: number };
     issues: { project_id: string; rel: string; status: string; reason: string }[] }
 }

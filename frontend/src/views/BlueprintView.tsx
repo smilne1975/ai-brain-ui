@@ -247,8 +247,8 @@ export function BlueprintView({ brain, query, focus, onFocus, onSelect, onOpenKn
 
   const suggestions = focus
     ? [
-        `What does ${brain.projects.find((project) => project.id === focus)?.name ?? "this folder"} actually do?`,
-        `How is ${brain.projects.find((project) => project.id === focus)?.name ?? "this folder"} wired?`,
+        `What is in ${brain.projects.find((project) => project.id === focus)?.name ?? "this folder"}?`,
+        "Which source files should I read first?",
         "What is still unfinished?",
       ]
     : brain.suggestions

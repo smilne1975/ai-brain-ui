@@ -17,9 +17,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from backend.app.catalog import CATEGORY_ORDER, SKILLS, SERVICES, ServiceDef
+from backend.app.product import legacy_cad_enabled
 from backend.app.evidence import text_key
 from backend.app.pdf_index import PdfIndex, enabled as pdf_enabled
-from backend.app.privacy import Policy, policy as privacy_policy
+from backend.app.privacy import Policy, active as privacy_active, policy as privacy_policy
 from backend.app.redact import redact
 
 IGNORE_DIRS = {
@@ -167,13 +168,15 @@ def build_brain(root: Path, progress: ProgressFn | None = None) -> dict:
     for project in projects:
         pf = [f for f in files if f["project_id"] == project["id"]]
         _fill_project(project, pf, skills)
-    from backend.app.microstation import attach_microstation
-    from backend.app.microstation_config import attach_config, config_search_rows
+    legacy_cad = legacy_cad_enabled() and privacy.token is None
+    config_index = []
+    if legacy_cad:
+        from backend.app.microstation import attach_microstation
+        from backend.app.microstation_config import attach_config, config_search_rows
 
-    if privacy.token is None:
         attach_microstation(root, projects, files)
         attach_config(root, projects, files)
-    config_index = config_search_rows(projects)
+        config_index = config_search_rows(projects)
     architecture = {
         "corpus": _corpus_graph(projects, files, connections),
         "projects": {p["id"]: _project_graph(p, files, connections) for p in projects},
@@ -193,6 +196,7 @@ def build_brain(root: Path, progress: ProgressFn | None = None) -> dict:
         "scanned_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "truncated": truncated,
         "private_policy": privacy.token,
+        "legacy_cad": legacy_cad,
         "coverage": coverage,
         "projects": projects,
         "files": files,
@@ -210,7 +214,7 @@ def build_brain(root: Path, progress: ProgressFn | None = None) -> dict:
 def signature(root: Path, progress: ProgressFn | None = None) -> str:
     """Cheap change token: relative path, size, mtime. Not file contents."""
     root = root.expanduser().resolve()
-    h = hashlib.sha256(b"brain-v9")
+    h = hashlib.sha256(b"brain-v10")
     privacy = privacy_policy(root)
     if privacy.token:
         h.update(f"privacy-v1:{privacy.token}".encode())
@@ -218,6 +222,8 @@ def signature(root: Path, progress: ProgressFn | None = None) -> str:
         return h.hexdigest()
     if pdf_enabled():
         h.update(b"pdf-v1")
+    if legacy_cad_enabled() and privacy.token is None:
+        h.update(b"legacy-cad-v1")
     if not root.exists():
         h.update(b"missing")
         return h.hexdigest()
@@ -760,6 +766,8 @@ def _match_skills(rel: str, text: str, kind: str) -> list[str]:
     blob = f"{rel}\n{text}".lower()
     hits: list[str] = []
     for skill in SKILLS:
+        if skill.id == "microstation-python" and (not legacy_cad_enabled() or privacy_active()):
+            continue
         if skill.special == "lab-notes":
             if kind == "markdown" and "prompt" not in rel.lower():
                 hits.append(skill.id)
@@ -1156,15 +1164,14 @@ def _project_graph(project: dict, files: list[dict], connections: list[dict]) ->
                 linked = True
         if not linked:
             edges.append({"id": f"e:svcroot:{project['id']}:{conn['id']}", "source": root_id, "target": sid, "label": ""})
-    from backend.app.microstation import graph_extras
-    from backend.app.microstation_config import brain_graph_extras
+    if project.get("microstation") or project.get("microstation_config"):
+        from backend.app.microstation import graph_extras
+        from backend.app.microstation_config import brain_graph_extras
 
-    extra_nodes, extra_edges = graph_extras(project, chosen_ids)
-    nodes.extend(extra_nodes)
-    edges.extend(extra_edges)
-    cfg_nodes, cfg_edges = brain_graph_extras(project, chosen_ids)
-    nodes.extend(cfg_nodes)
-    edges.extend(cfg_edges)
+        for enrich in (graph_extras, brain_graph_extras):
+            extra_nodes, extra_edges = enrich(project, chosen_ids)
+            nodes.extend(extra_nodes)
+            edges.extend(extra_edges)
     return {"nodes": nodes, "edges": _dedupe_edges(edges)}
 
 
@@ -1232,11 +1239,12 @@ def _corpus_graph(projects: list[dict], files: list[dict], connections: list[dic
                         "label": "mentions",
                     }
                 )
-    from backend.app.microstation_config import corpus_config_links
+    if any(project.get("microstation_config") for project in projects):
+        from backend.app.microstation_config import corpus_config_links
 
-    extra_nodes, extra_edges = corpus_config_links(projects)
-    nodes.extend(extra_nodes)
-    edges.extend(extra_edges)
+        extra_nodes, extra_edges = corpus_config_links(projects)
+        nodes.extend(extra_nodes)
+        edges.extend(extra_edges)
     return {"nodes": nodes, "edges": _dedupe_edges(edges)}
 
 
@@ -1256,8 +1264,8 @@ def _suggestions(projects: list[dict], skills: list[dict], connections: list[dic
     out: list[str] = []
     if projects:
         richest = max(projects, key=lambda p: p["stats"].get("lines", 0))
-        out.append(f"What does {richest['name']} actually do?")
-        out.append(f"How is {richest['name']} wired?")
+        out.append(f"What is in {richest['name']}?")
+        out.append(f"Which sources should I read first in {richest['name']}?")
     live = [c for c in connections if c["status"] == "connected"]
     if live:
         out.append(f"Which folders talk to {live[0]['name']}?")

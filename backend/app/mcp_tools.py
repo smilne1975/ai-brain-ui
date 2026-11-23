@@ -20,6 +20,7 @@ from backend.app.brief import build_brief
 from backend.app.copilot_chats import load_chats, merge_chats
 from backend.app.digest import build_digest
 from backend.app.privacy import active as private_folders_active, policy as privacy_policy
+from backend.app.product import cad_matches_scan, legacy_cad_enabled
 from backend.app.redact import redact
 from backend.app import recall, store
 
@@ -61,7 +62,7 @@ TOOLS = (
     },
     {
         "name": "explain_file",
-        "description": "What a file is for: project, imports, importers, skills, unfinished markers, and MicroStation key-ins.",
+        "description": "What a file is for: project, relationships, skills, and unfinished markers.",
         "inputSchema": {
             "type": "object",
             "properties": {"path": {"type": "string", "description": "Repo-relative path, file name, or file id."}},
@@ -103,6 +104,8 @@ def tool_specs() -> list[dict]:
     for tool in TOOLS:
         if tool["name"] == "get_project_context" and not recall.enabled():
             continue
+        if tool["name"] == "get_microstation_config" and (not legacy_cad_enabled() or private_folders_active()):
+            continue
         specs.append(
             {
                 **tool,
@@ -134,13 +137,13 @@ def load_index(root: Path, engine=None) -> dict:
     if engine is not None:
         scanning = getattr(engine, "phase", "") == "scanning"
         live = getattr(engine, "brain", None)
-        if isinstance(live, dict) and live.get("private_policy") == scope:
+        if isinstance(live, dict) and live.get("private_policy") == scope and cad_matches_scan(live, scope):
             brain = live
             source = "memory"
             updated = live.get("scanned_at")
     if brain is None:
         cached = store.load_latest(root)
-        if cached and cached[0].get("private_policy") == scope:
+        if cached and cached[0].get("private_policy") == scope and cad_matches_scan(cached[0], scope):
             brain, updated = cached
             source = "cache"
     phase = _read_phase(root)
@@ -201,8 +204,10 @@ def latest_digest(index: dict) -> str:
 def usage_report(root: Path, engine=None) -> dict:
     root = Path(root).expanduser().resolve()
     rows = _read_usage(root)
-    counts: dict[str, int] = {tool["name"]: 0 for tool in TOOLS}
+    counts: dict[str, int] = {tool["name"]: 0 for tool in tool_specs()}
     counts["digest"] = 0
+    if not legacy_cad_enabled():
+        rows = [row for row in rows if row.get("tool") != "get_microstation_config"]
     for row in rows:
         tool = str(row.get("tool") or "")
         if tool:
@@ -222,7 +227,7 @@ def usage_report(root: Path, engine=None) -> dict:
         "counts": [{"tool": name, "count": count} for name, count in ordered if name in counts],
         "last_call": last,
         "recent": recent,
-        "tools": [{"name": tool["name"], "description": tool["description"]} for tool in TOOLS],
+        "tools": [{"name": tool["name"], "description": tool["description"]} for tool in tool_specs()],
         "resource": "brain://digest/latest",
         "snippet": mcp_snippet(root),
         "link": {"state": state, "label": label, "last_call": last, "detail": registered["detail"]},
@@ -313,6 +318,8 @@ def _invoke(name: str, args: dict, index: dict) -> tuple[str, bool]:
             return note, False
         payload = list_projects(index["root"], brain)
     elif name == "get_microstation_config":
+        if not legacy_cad_enabled() or not brain.get("legacy_cad"):
+            return "MicroStation configuration is unavailable in standalone AI Brain.", True
         if not brain:
             return note, False
         payload = get_microstation_config(index["root"], brain, args.get("project"), args.get("workset"))
@@ -393,6 +400,8 @@ def search_projects(brain: dict, query: str, limit: object) -> dict:
 
 
 def _config_rows(brain: dict) -> list[dict]:
+    if not brain.get("legacy_cad"):
+        return []
     rows = brain.get("config_index")
     if isinstance(rows, list):
         return rows
@@ -885,7 +894,7 @@ def _check_fresh(index: dict) -> dict:
 
 def _check_runnable() -> dict:
     names = [tool["name"] for tool in tool_specs()]
-    if {"search_projects", "get_brief", "get_timeline", "explain_file", "list_projects", "get_microstation_config"} <= set(names):
+    if {"search_projects", "get_brief", "get_timeline", "explain_file", "list_projects"} <= set(names):
         return _row("server", "pass", "MCP server can run", "python -m brain_mcp speaks MCP over stdio, and POST /mcp speaks the same JSON-RPC.", "")
     return _row("server", "fail", "MCP server is incomplete", "A tool definition is missing.", "Reinstall the ai-brain-ui checkout.")
 

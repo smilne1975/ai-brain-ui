@@ -27,8 +27,7 @@ from backend.app.engine import Engine, Hub
 from backend.app.llm import resolve_provider
 from backend.app import agent_history, clips, deliverables, evidence, external_notes, knowledge, living_questions, meetings, obsidian, old_ideas, project_records, recall, scan_replay, voice, webhooks
 from backend.app import capture, review_links
-from backend.app.microstation import build_microstation
-from backend.app.microstation_config import build_config
+from backend.app.product import cad_matches_scan, legacy_cad_enabled
 from backend.app.mcp_rpc import dispatch
 from backend.app.mcp_tools import doctor_report, usage_report
 from backend.app.privacy import active as private_folders_active, policy as privacy_policy
@@ -367,11 +366,13 @@ def create_app() -> FastAPI:
 
     @app.get("/api/microstation/config")
     def microstation_config_index():
+        _require_legacy_cad()
         engine: Engine = app.state.engine
         return _config_board(engine)
 
     @app.get("/api/microstation/config/{project_id}")
     def microstation_config_project(project_id: str):
+        _require_legacy_cad()
         engine: Engine = app.state.engine
         brain = _require_brain(engine)
         known = {project["id"] for project in brain.get("projects") or []}
@@ -385,11 +386,13 @@ def create_app() -> FastAPI:
 
     @app.get("/api/microstation")
     def microstation_index():
+        _require_legacy_cad()
         engine: Engine = app.state.engine
         return _microstation_board(engine)
 
     @app.get("/api/microstation/{project_id}")
     def microstation_project(project_id: str):
+        _require_legacy_cad()
         engine: Engine = app.state.engine
         brain = _require_brain(engine)
         known = {project["id"] for project in brain.get("projects") or []}
@@ -1147,6 +1150,8 @@ def _config_board(engine: Engine) -> dict:
     projects = brain.get("projects") or []
     if projects and all("microstation_config" in project for project in projects):
         return {"projects": [project["microstation_config"] for project in projects if project.get("microstation_config")]}
+    from backend.app.microstation_config import build_config
+
     return build_config(engine.root, projects, brain.get("files") or [])
 
 
@@ -1157,16 +1162,24 @@ def _microstation_board(engine: Engine) -> dict:
     projects = brain.get("projects") or []
     if projects and all("microstation" in project for project in projects):
         return {"projects": [project["microstation"] for project in projects if project.get("microstation")]}
+    from backend.app.microstation import build_microstation
+
     return build_microstation(engine.root, projects, brain.get("files") or [])
 
 
 def _require_brain(engine: Engine) -> dict:
     brain = engine.brain
-    if brain and brain.get("private_policy") == privacy_policy(engine.root).token:
+    token = privacy_policy(engine.root).token
+    if brain and brain.get("private_policy") == token and cad_matches_scan(brain, token):
         return brain
     if engine.phase in {"scanning", "starting"}:
         raise HTTPException(status_code=503, detail="Still scanning this folder.")
     raise HTTPException(status_code=404, detail=engine.error or "Not scanned")
+
+
+def _require_legacy_cad() -> None:
+    if not legacy_cad_enabled() or private_folders_active():
+        raise HTTPException(status_code=404, detail="MicroStation tools belong in MicroStationBot; legacy compatibility is off")
 
 
 def _require_sharing_enabled() -> None:

@@ -6,7 +6,6 @@ import re
 
 from backend.app.catalog import SERVICES
 from backend.app.llm import complete
-from backend.app.microstation import index_for_ask
 from backend.app.redact import redact
 from backend.app import evidence as origins_view, semantic
 
@@ -392,6 +391,14 @@ def _named_projects(question: str, projects: list[dict]) -> list[dict]:
         if project["name"].lower() in question or project["id"] in question:
             hits.append(project)
     return hits
+
+
+def index_for_ask(brain: dict):
+    if not brain.get("legacy_cad"):
+        return []
+    from backend.app.microstation import index_for_ask as legacy_index
+
+    return legacy_index(brain)
 
 
 def _keyin_phrase(question: str, brain: dict) -> bool:
