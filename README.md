@@ -1,8 +1,10 @@
 # AI Brain
 
-A local mission-control view of a messy folder of AI and coding projects: markdown notes, Python scripts, configs, and half-finished Copilot experiments. It scans the folder on your machine, then draws how the work connects.
+A standalone, local workspace for notes, sources, research, and decisions. Point it at folders you already use; it helps you find evidence, see what changed, and pick up where you left off. You don't need to write code, install MicroStationBot, or connect a model. Developer views are still available for people who use them.
 
-Ten views:
+**Start with Knowledge, Blueprint, Timeline, Cards, or Digest.** For a notes-only example on Windows, run `start.bat -Projects "%CD%\examples\research-notes"` from the repository root in Command Prompt. [Product ownership and adoption](docs/PRODUCT_BOUNDARIES.md) explains how specialist apps can pick up general improvements independently.
+
+Views:
 
 - **Skills** — radial map of capabilities detected in the files
 - **Blueprint** — flowchart of each folder (and of the whole corpus), with an ask bar. This is the map.
@@ -12,10 +14,11 @@ Ten views:
 - **Timeline** — “what was I doing?”, grouped by day and week across every scanned folder
 - **Cards** — one plain-English status card per folder
 - **Digest** — today or this week across every folder
-- **Config** — MicroStation WorkSpaces, WorkSets, and legacy project files (press `9`)
 - **Knowledge** — preview and approve local project knowledge pages; check stale sources and broken links (press `0`)
 
 Nothing is uploaded. The app binds to `127.0.0.1`.
+
+**Temporary CAD compatibility:** New CAD/BIM/AEC features belong in MicroStationBot. Standalone AI Brain does not discover WorkSets or key-ins, advertise CAD assistant tools, or show the specialist configuration tab by default. Existing users who need the previous read-only behavior can set `BRAIN_LEGACY_CAD=1` before launching AI Brain (and its standalone assistant connector, if used). Restart to change the setting; the app rebuilds the index instead of reusing a cache from the other mode. Private-folder protection takes precedence. This bridge stays available until MicroStationBot's replacement is verified; it does not run Bentley or MicroStationBot.
 
 ## 3D graph and reviewed knowledge (preview)
 
@@ -196,9 +199,9 @@ Each card, and the folder detail on the map, also has **Pick up where I left off
 
 `GET /api/briefs` returns every brief. `GET /api/brief/{project}` returns one. `POST /api/brief/{project}/handoff` writes `BRAIN_HANDOFF.md`. With no model key the sentences are local. Set `BRAIN_BRIEF_LLM=1` as well as a provider key to let the model rewrite them. Chat text is not sent otherwise. `.env` values are never included.
 
-## MicroStation Python
+## Legacy compatibility: MicroStation Python
 
-A folder is treated as MicroStation Python when a script imports an `MSPy*` module (`MSPyBentley`, `MSPyDgnPlatform`, `MSPyMstnPlatform`, and the rest) or the folder contains a `*.commands.xml` key-in table. No API key is required.
+Only with `BRAIN_LEGACY_CAD=1`, a folder is treated as MicroStation Python when a script imports an `MSPy*` module or the folder contains a `*.commands.xml` key-in table. No API key is required.
 
 The card shows an **MSPy** badge, the key-in strings, and the handler each one calls (`levels.py:report_levels`). A handler that is not defined in the scanned scripts is marked missing. Pitfall chips follow [Bentley's Python guide](https://developer.bentley.com/documentation/microstation-python-api/guides/developingpythonapps.md):
 
@@ -215,7 +218,7 @@ The demo folder `demo-projects/levels-report` registers `MYREPORT LEVELS`, impor
 
 ![MicroStation key-ins on the levels-report card](docs/microstation-keyins.png)
 
-## MicroStation configuration
+## Legacy compatibility: MicroStation configuration
 
 Open **Config** (or press `9`). The page is read-only: it parses `*.cfg`, `*.ucf`, and legacy `*.pcf` files already in the scan and never writes them.
 
@@ -254,7 +257,7 @@ Tools:
 - `search_projects` — same retrieval as the ask bar in heuristic mode
 - `get_brief` — the pick-up brief for one folder
 - `get_timeline` — saves, git subjects, and Copilot sessions
-- `explain_file` — imports, skills, unfinished markers, and MicroStation key-ins
+- `explain_file` — file purpose, relationships, skills, and unfinished markers
 - `list_projects` — status, entry point, and run command
 - `get_microstation_config` — WorkSet and WorkSpace variables, levels, and configuration faults
 - resource `brain://digest/latest` — the latest daily digest markdown

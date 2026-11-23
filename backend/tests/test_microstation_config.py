@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.activity import build_timeline
@@ -16,6 +17,11 @@ from backend.app import store
 
 DEMO = Path(__file__).resolve().parents[2] / "demo-projects"
 SENTINEL = "sk-demo-NOTREAL-redact-me"
+
+
+@pytest.fixture(autouse=True)
+def legacy_cad(monkeypatch):
+    monkeypatch.setenv("BRAIN_LEGACY_CAD", "1")
 
 
 def _var(report: dict, name: str) -> dict:

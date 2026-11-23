@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.ask import answer
@@ -13,6 +14,12 @@ from backend.app.scanner import build_brain
 
 DEMO = Path(__file__).resolve().parents[2] / "demo-projects"
 SENTINEL = "sk-demo-NOTREAL-redact-me"
+
+
+@pytest.fixture(autouse=True)
+def legacy_cad(monkeypatch):
+    monkeypatch.setenv("BRAIN_LEGACY_CAD", "1")
+
 
 TABLE = """<?xml version="1.0" encoding="utf-8"?>
 <KeyinTree xmlns="http://www.bentley.com/schemas/1.0/MicroStation/AddIn/KeyinTree.xsd">

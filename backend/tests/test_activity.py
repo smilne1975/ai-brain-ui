@@ -216,6 +216,7 @@ def test_scan_cap_keeps_unread_files_out_of_the_timeline(tmp_path: Path, monkeyp
 
 
 def test_demo_timeline_and_cards_api(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("BRAIN_LEGACY_CAD", "1")
     monkeypatch.setenv("BRAIN_ROOT", str(DEMO))
     monkeypatch.setenv("BRAIN_CACHE", str(tmp_path / "cache.sqlite"))
     monkeypatch.setenv("BRAIN_DISABLE_WATCH", "1")

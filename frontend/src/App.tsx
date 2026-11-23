@@ -15,21 +15,21 @@ import { TimelineView } from "./views/TimelineView"
 import { KnowledgeView } from "./views/KnowledgeView"
 
 const VIEWS: { id: View; label: string; hint: string }[] = [
-  { id: "skills", label: "Skills", hint: "1" },
+  { id: "knowledge", label: "Knowledge", hint: "0" },
   { id: "blueprint", label: "Blueprint", hint: "2" },
-  { id: "system", label: "System", hint: "3" },
-  { id: "connections", label: "Connections", hint: "4" },
-  { id: "copilot", label: "Copilot", hint: "8" },
   { id: "timeline", label: "Timeline", hint: "5" },
   { id: "cards", label: "Cards", hint: "6" },
   { id: "digest", label: "Digest", hint: "7" },
-  { id: "config", label: "Config", hint: "9" },
-  { id: "knowledge", label: "Knowledge", hint: "0" },
+  { id: "skills", label: "Skills", hint: "1" },
+  { id: "system", label: "System", hint: "3" },
+  { id: "connections", label: "Connections", hint: "4" },
+  { id: "copilot", label: "Copilot", hint: "8" },
+  { id: "config", label: "Legacy CAD Config", hint: "9" },
 ]
 
 function readView(): View {
   const hash = window.location.hash.replace(/^#\/?/, "")
-  return VIEWS.some((view) => view.id === hash) ? (hash as View) : "skills"
+  return VIEWS.some((view) => view.id === hash) ? (hash as View) : "knowledge"
 }
 
 type Hit = { kind: Selection["kind"]; id: string; label: string; meta: string; view?: View }
@@ -57,13 +57,22 @@ export default function App() {
   const [config, setConfig] = useState<ConfigBoard | null>(null)
   const [configLoading, setConfigLoading] = useState(false)
   const [configError, setConfigError] = useState("")
+  const legacyCad = brain?.legacy_cad === true
+  const availableViews = legacyCad ? VIEWS : VIEWS.filter((item) => item.id !== "config")
 
   useEffect(() => {
-    if (!window.location.hash) history.replaceState(null, "", "#/skills")
+    if (!window.location.hash) history.replaceState(null, "", "#/knowledge")
     const onHash = () => setView(readView())
     window.addEventListener("hashchange", onHash)
     return () => window.removeEventListener("hashchange", onHash)
   }, [])
+
+  useEffect(() => {
+    if (brain && !legacyCad && view === "config") {
+      history.replaceState(null, "", "#/knowledge")
+      setView("knowledge")
+    }
+  }, [brain, legacyCad, view])
 
   useEffect(() => {
     let cancel = false
@@ -156,12 +165,12 @@ export default function App() {
         setSelection(null)
       }
       if (typing) return
-      const index = VIEWS.findIndex((item) => item.hint === event.key)
-      if (index >= 0) go(VIEWS[index].id)
+      const item = VIEWS.find((item) => item.hint === event.key && (item.id !== "config" || legacyCad))
+      if (item) go(item.id)
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [])
+  }, [legacyCad])
 
   const refreshKey = brain ? `${brain.scanned_at}|${brain.summaries}|${brain.stats.files}|${brain.stats.projects}` : ""
 
@@ -228,7 +237,7 @@ export default function App() {
   }, [refreshKey, view])
 
   useEffect(() => {
-    if (!refreshKey || view !== "config") return
+    if (!refreshKey || view !== "config" || !legacyCad) return
     let cancel = false
     setConfigLoading(true)
     setConfigError("")
@@ -245,7 +254,7 @@ export default function App() {
     return () => {
       cancel = true
     }
-  }, [refreshKey, view])
+  }, [refreshKey, view, legacyCad])
 
   function go(next: View) {
     if (window.location.hash !== `#/${next}`) window.location.hash = `#/${next}`
@@ -336,7 +345,7 @@ export default function App() {
           {rootPath}
         </p>
         <nav className="nav">
-          {VIEWS.map((item) => (
+          {availableViews.map((item) => (
             <button key={item.id} type="button" className={view === item.id ? "active" : ""} onClick={() => go(item.id)}>
               <Icon name={item.id} />
               <span>{item.label}</span>
@@ -495,7 +504,7 @@ export default function App() {
               onOpenConfig={() => go("config")}
             />
           )}
-          {view === "config" && (
+          {legacyCad && view === "config" && (
             <ConfigView
               brain={brain}
               data={config}
@@ -522,7 +531,7 @@ export default function App() {
         onOpenConfig={() => go("config")}
       />
       <nav className="tabbar">
-        {VIEWS.map((item) => (
+        {availableViews.map((item) => (
           <button key={item.id} type="button" className={view === item.id ? "active" : ""} onClick={() => go(item.id)}>
             <Icon name={item.id} />
             {item.label}

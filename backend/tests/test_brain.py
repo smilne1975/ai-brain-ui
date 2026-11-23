@@ -49,7 +49,8 @@ def test_env_and_source_secrets_never_enter_the_brain(tmp_path: Path):
     assert "[redacted" in blob
 
 
-def test_demo_corpus_map():
+def test_demo_corpus_map(monkeypatch):
+    monkeypatch.delenv("BRAIN_LEGACY_CAD", raising=False)
     brain = build_brain(DEMO)
     blob = json.dumps(brain)
     for secret in (
@@ -73,7 +74,8 @@ def test_demo_corpus_map():
         "levels-report",
     }
     skill_ids = {skill["id"] for skill in brain["skills"]}
-    for required in ("openai-api", "rag", "chunking", "embeddings", "routing", "slack", "github", "vision", "prompt-craft", "tool-use", "copilot", "microstation-python"):
+    assert "microstation-python" not in skill_ids
+    for required in ("openai-api", "rag", "chunking", "embeddings", "routing", "slack", "github", "vision", "prompt-craft", "tool-use", "copilot"):
         assert required in skill_ids
 
     status = {item["id"]: item["status"] for item in brain["connections"]}
@@ -174,6 +176,7 @@ def _wait_ready(client: TestClient, timeout: float = 20) -> dict:
 
 
 def test_startup_returns_before_the_scan_finishes(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("BRAIN_LEGACY_CAD", "1")
     docs = tmp_path / "Documents"
     project = docs / "alpha"
     project.mkdir(parents=True)
